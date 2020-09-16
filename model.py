@@ -29,8 +29,8 @@ class SASRec(torch.nn.Module):
 
         # TODO: loss += args.l2_emb for regularizing embedding vectors during training
         # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
-        self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0).to(self.dev)
-        self.pos_emb = torch.nn.Embedding(args.maxlen, args.hidden_units).to(self.dev) # TO IMPROVE
+        self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
+        self.pos_emb = torch.nn.Embedding(args.maxlen, args.hidden_units) # TO IMPROVE
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
         self.attention_layernorms = torch.nn.ModuleList() # to be Q for self-attention
@@ -55,18 +55,19 @@ class SASRec(torch.nn.Module):
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
             self.forward_layers.append(new_fwd_layer)
 
-            self.pos_sigmoid = torch.nn.Sigmoid()
-            self.neg_sigmoid = torch.nn.Sigmoid()
+            # self.pos_sigmoid = torch.nn.Sigmoid()
+            # self.neg_sigmoid = torch.nn.Sigmoid()
 
     def forward(self, user_ids, log_seqs, pos_seqs, neg_seqs): # for training
-        seqs = self.item_emb(torch.LongTensor(log_seqs)) # user_ids hasn't been used yet
+        # embedding table could not be put on GPU directly?
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev)) # user_ids hasn't been used yet
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
-        seqs += self.pos_emb(torch.LongTensor(positions)) # seems wrong/useless 'positional encoding'
+        seqs += self.pos_emb(torch.LongTensor(positions).to(self.dev)) # seems wrong/useless 'positional encoding'
         seqs = self.emb_dropout(seqs)
 
         # mask 0th items(placeholder for dry-run) in log_seqs
         # would be easier if 0th item could be an exception for training
-        timeline_mask = torch.BoolTensor(log_seqs == 0, device=self.dev)
+        timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1) # broadcast in last dim
 
         tl = seqs.shape[1] # time dim len for enforce causality
@@ -76,9 +77,8 @@ class SASRec(torch.nn.Module):
             # Self-attention, Q=layernorm(seqs), K=V=seqs
             seqs = torch.transpose(seqs, 0, 1) # (N, T, C) -> (T, N, C)
             Q = self.attention_layernorms[i](seqs) # PyTorch mha requires time first fmt
-            seqs, _ = self.attention_layers[i](Q, seqs, seqs, 
-                                            key_padding_mask=timeline_mask,
-                                            attn_mask=attention_mask)
+            seqs, _ = self.attention_layers[i](Q, seqs, seqs, attn_mask=attention_mask)
+                                            # key_padding_mask=timeline_mask, nan?
                                             # need_weights=False) this arg do not work?
             seqs = torch.transpose(seqs, 0, 1) # (T, N, C) -> (N, T, C)
 
@@ -89,26 +89,26 @@ class SASRec(torch.nn.Module):
 
         log_feats = self.last_layernorm(seqs)
 
-        pos_embs = self.item_emb(torch.LongTensor(pos_seqs))
-        neg_embs = self.item_emb(torch.LongTensor(neg_seqs))
+        pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
+        neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
 
         pos_logits = (log_feats * pos_embs).sum(dim=-1)
         neg_logits = (log_feats * neg_embs).sum(dim=-1)
 
-        pos_pred = self.pos_sigmoid(pos_logits)
-        neg_pred = self.neg_sigmoid(neg_logits)
+        # pos_pred = self.pos_sigmoid(pos_logits)
+        # neg_pred = self.neg_sigmoid(neg_logits)
 
-        return pos_pred, neg_pred
+        return pos_logits, neg_logits # pos_pred, neg_pred
 
     def predict(self, user_ids, log_seqs, item_indices): # for inference
-        seqs = self.item_emb(torch.LongTensor(log_seqs)) # user_ids hasn't been used yet
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev)) # user_ids hasn't been used yet
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
-        seqs += self.pos_emb(torch.LongTensor(positions)) # seems wrong/useless 'positional encoding'
+        seqs += self.pos_emb(torch.LongTensor(positions).to(self.dev)) # seems wrong/useless 'positional encoding'
         seqs = self.emb_dropout(seqs)
 
         # mask 0th items(placeholder for dry-run) in log_seqs
         # would be easier if 0th item could be an exception for training
-        timeline_mask = torch.BoolTensor(log_seqs == 0, device=self.dev)
+        timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1) # broadcast in last dim
 
         tl = seqs.shape[1] # time dim len for enforce causality
@@ -132,10 +132,10 @@ class SASRec(torch.nn.Module):
         log_feats = self.last_layernorm(seqs) # (U, T, C) -> (U, -1, C)
         final_feat = log_feats[:, -1, :] # only use last QKV classifier, a waste
 
-        item_embs = self.item_emb(torch.LongTensor(item_indices)) # (U, I, C)
+        item_embs = self.item_emb(torch.LongTensor(item_indices).to(self.dev)) # (U, I, C)
 
         logits = item_embs.matmul(final_feat.unsqueeze(-1)).squeeze(-1)
 
-        preds = self.pos_sigmoid(logits) # rank same item list for different users
+        # preds = self.pos_sigmoid(logits) # rank same item list for different users
 
-        return preds # (U, I)
+        return logits # preds # (U, I)

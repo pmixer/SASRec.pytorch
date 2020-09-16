@@ -46,14 +46,13 @@ print('average sequence length: %.2f' % (cc / len(user_train)))
 f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
 
 sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
-model = SASRec(usernum, itemnum, args).to(args.device)
+model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
 model.train() # enable model training
 
 if args.state_dict_path is not None:
     try:
         model.load_state_dict(torch.load(args.state_dict_path))
     except:
-        import pdb; pdb.set_trace()
         print('failed loading state_dicts, pls check file path: ', end="")
         print(args.state_dict_path)
 
@@ -63,7 +62,8 @@ if args.inference_only:
     print('test (NDCG@10: %.4f, HR@10: %.4f)' % (t_test[0], t_test[1]))
 
 # ce_criterion = torch.nn.CrossEntropyLoss()
-bce_criterion = torch.nn.BCELoss()
+# https://github.com/NVIDIA/pix2pixHD/issues/9 how could an old bug appear again...
+bce_criterion = torch.nn.BCEWithLogitsLoss() # torch.nn.BCELoss()
 adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
 
 T = 0.0
@@ -72,22 +72,20 @@ t0 = time.time()
 for epoch in range(1, args.num_epochs + 1):
     if args.inference_only: break # just to decrease identition
     for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
-
         u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
         u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
-        pos_pred, neg_pred = model(u, seq, pos, neg)
-        pos_labels, neg_labels = torch.ones(pos_pred.shape), torch.zeros(neg_pred.shape)
+        pos_logits, neg_logits = model(u, seq, pos, neg)
+        pos_labels, neg_labels = torch.ones(pos_logits.shape, device=args.device), torch.zeros(neg_logits.shape, device=args.device)
 
         indices = np.where(pos != 0)
-
-        loss = bce_criterion(pos_pred[indices], pos_labels[indices])
-        loss += bce_criterion(neg_pred[indices], neg_labels[indices])
+        loss = bce_criterion(pos_logits[indices], pos_labels[indices])
+        loss += bce_criterion(neg_logits[indices], neg_labels[indices])
         loss.backward()
         adam_optimizer.step()
 
-        print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item()))
+        # print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item()))
 
-    if epoch % 20 == 0:
+    if epoch % 20 == 0 or epoch == 1:
         model.eval()
         t1 = time.time() - t0
         T += t1
