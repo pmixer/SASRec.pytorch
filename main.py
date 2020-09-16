@@ -49,9 +49,12 @@ sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, 
 model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
 model.train() # enable model training
 
+epoch_start_idx = 1
 if args.state_dict_path is not None:
     try:
         model.load_state_dict(torch.load(args.state_dict_path))
+        tail = args.state_dict_path[args.state_dict_path.find('epoch=') + 6:]
+        epoch_start_idx = int(tail[:tail.find('.')]) + 1
     except:
         print('failed loading state_dicts, pls check file path: ', end="")
         print(args.state_dict_path)
@@ -69,23 +72,23 @@ adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.
 T = 0.0
 t0 = time.time()
 
-for epoch in range(1, args.num_epochs + 1):
+for epoch in range(epoch_start_idx, args.num_epochs + 1):
     if args.inference_only: break # just to decrease identition
     for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
         u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
         u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
         pos_logits, neg_logits = model(u, seq, pos, neg)
         pos_labels, neg_labels = torch.ones(pos_logits.shape, device=args.device), torch.zeros(neg_logits.shape, device=args.device)
-
+        # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
+        adam_optimizer.zero_grad()
         indices = np.where(pos != 0)
         loss = bce_criterion(pos_logits[indices], pos_labels[indices])
         loss += bce_criterion(neg_logits[indices], neg_labels[indices])
         loss.backward()
         adam_optimizer.step()
+        # print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item())) # expected 0.4~0.6 after init few epochs
 
-        # print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item()))
-
-    if epoch % 20 == 0 or epoch == 1:
+    if epoch % 20 == 0:
         model.eval()
         t1 = time.time() - t0
         T += t1

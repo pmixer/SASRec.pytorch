@@ -59,8 +59,8 @@ class SASRec(torch.nn.Module):
             # self.neg_sigmoid = torch.nn.Sigmoid()
 
     def forward(self, user_ids, log_seqs, pos_seqs, neg_seqs): # for training
-        # embedding table could not be put on GPU directly?
         seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev)) # user_ids hasn't been used yet
+        seqs *= self.item_emb.embedding_dim ** 0.5
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
         seqs += self.pos_emb(torch.LongTensor(positions).to(self.dev)) # seems wrong/useless 'positional encoding'
         seqs = self.emb_dropout(seqs)
@@ -77,9 +77,10 @@ class SASRec(torch.nn.Module):
             # Self-attention, Q=layernorm(seqs), K=V=seqs
             seqs = torch.transpose(seqs, 0, 1) # (N, T, C) -> (T, N, C)
             Q = self.attention_layernorms[i](seqs) # PyTorch mha requires time first fmt
-            seqs, _ = self.attention_layers[i](Q, seqs, seqs, attn_mask=attention_mask)
+            mha_outputs, _ = self.attention_layers[i](Q, seqs, seqs, attn_mask=attention_mask)
                                             # key_padding_mask=timeline_mask, nan?
                                             # need_weights=False) this arg do not work?
+            seqs = Q + mha_outputs
             seqs = torch.transpose(seqs, 0, 1) # (T, N, C) -> (N, T, C)
 
             # Point-wise Feed-forward, actually 2 Conv1D for channel wise fusion
@@ -101,13 +102,12 @@ class SASRec(torch.nn.Module):
         return pos_logits, neg_logits # pos_pred, neg_pred
 
     def predict(self, user_ids, log_seqs, item_indices): # for inference
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev)) # user_ids hasn't been used yet
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        seqs *= self.item_emb.embedding_dim ** 0.5
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
-        seqs += self.pos_emb(torch.LongTensor(positions).to(self.dev)) # seems wrong/useless 'positional encoding'
+        seqs += self.pos_emb(torch.LongTensor(positions).to(self.dev))
         seqs = self.emb_dropout(seqs)
 
-        # mask 0th items(placeholder for dry-run) in log_seqs
-        # would be easier if 0th item could be an exception for training
         timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1) # broadcast in last dim
 
@@ -115,16 +115,15 @@ class SASRec(torch.nn.Module):
         attention_mask = ~torch.tril(torch.ones((tl, tl), dtype=torch.bool, device=self.dev))
 
         for i in range(len(self.attention_layers)):
-            # Self-attention, Q=layernorm(seqs), K=V=seqs
-            seqs = torch.transpose(seqs, 0, 1) # (N, T, C) -> (T, N, C)
-            Q = self.attention_layernorms[i](seqs) # PyTorch mha requires time first fmt
-            seqs, _ = self.attention_layers[i](Q, seqs, seqs, 
-                                            key_padding_mask=timeline_mask,
+            seqs = torch.transpose(seqs, 0, 1)
+            Q = self.attention_layernorms[i](seqs)
+            mha_outputs, _ = self.attention_layers[i](Q, seqs, seqs, 
                                             attn_mask=attention_mask)
+                                            # key_padding_mask=timeline_mask # too bad to have duplicated code
                                             # need_weights=False) this arg do not work?
-            seqs = torch.transpose(seqs, 0, 1) # (T, N, C) -> (N, T, C)
+            seqs = Q + mha_outputs
+            seqs = torch.transpose(seqs, 0, 1)
 
-            # Point-wise Feed-forward, actually 2 Conv1D for channel wise fusion
             seqs = self.forward_layernorms[i](seqs)
             seqs = self.forward_layers[i](seqs)
             seqs *=  ~timeline_mask.unsqueeze(-1)
