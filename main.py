@@ -7,6 +7,11 @@ from model import SASRec
 from tqdm import tqdm
 from utils import *
 
+def str2bool(s):
+    if s not in {'false', 'true'}:
+        raise ValueError('Not a valid boolean string')
+    return s == 'true'
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True)
 parser.add_argument('--train_dir', required=True)
@@ -15,10 +20,13 @@ parser.add_argument('--lr', default=0.001, type=float)
 parser.add_argument('--maxlen', default=50, type=int)
 parser.add_argument('--hidden_units', default=50, type=int)
 parser.add_argument('--num_blocks', default=2, type=int)
-parser.add_argument('--num_epochs', default=2, type=int)
+parser.add_argument('--num_epochs', default=201, type=int)
 parser.add_argument('--num_heads', default=1, type=int)
 parser.add_argument('--dropout_rate', default=0.5, type=float)
 parser.add_argument('--l2_emb', default=0.0, type=float)
+parser.add_argument('--device', default='cpu', type=str)
+parser.add_argument('--inference_only', default=False, type=str2bool)
+parser.add_argument('--state_dict_path', default=None, type=str)
 
 args = parser.parse_args()
 if not os.path.isdir(args.dataset + '_' + args.train_dir):
@@ -38,9 +46,22 @@ print('average sequence length: %.2f' % (cc / len(user_train)))
 f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
 
 sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
-model = SASRec(usernum, itemnum, args)
-
+model = SASRec(usernum, itemnum, args).to(args.device)
 model.train() # enable model training
+
+if args.state_dict_path is not None:
+    try:
+        model.load_state_dict(torch.load(args.state_dict_path))
+    except:
+        import pdb; pdb.set_trace()
+        print('failed loading state_dicts, pls check file path: ', end="")
+        print(args.state_dict_path)
+
+if args.inference_only:
+    model.eval()
+    t_test = evaluate(model, dataset, args)
+    print('test (NDCG@10: %.4f, HR@10: %.4f)' % (t_test[0], t_test[1]))
+
 # ce_criterion = torch.nn.CrossEntropyLoss()
 bce_criterion = torch.nn.BCELoss()
 adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
@@ -49,7 +70,7 @@ T = 0.0
 t0 = time.time()
 
 for epoch in range(1, args.num_epochs + 1):
-
+    if args.inference_only: break # just to decrease identition
     for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
 
         u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
@@ -81,6 +102,11 @@ for epoch in range(1, args.num_epochs + 1):
         t0 = time.time()
         model.train()
 
+    if epoch == args.num_epochs:
+        folder = args.dataset + '_' + args.train_dir
+        fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
+        fname = fname.format(args.num_epochs, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
+        torch.save(model.state_dict(), os.path.join(folder, fname))
 
 f.close()
 sampler.close()

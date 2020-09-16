@@ -25,11 +25,12 @@ class SASRec(torch.nn.Module):
 
         self.user_num = user_num
         self.item_num = item_num
+        self.dev = args.device
 
         # TODO: loss += args.l2_emb for regularizing embedding vectors during training
         # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
-        self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
-        self.pos_emb = torch.nn.Embedding(args.maxlen, args.hidden_units) # TO IMPROVE
+        self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0).to(self.dev)
+        self.pos_emb = torch.nn.Embedding(args.maxlen, args.hidden_units).to(self.dev) # TO IMPROVE
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
         self.attention_layernorms = torch.nn.ModuleList() # to be Q for self-attention
@@ -65,11 +66,11 @@ class SASRec(torch.nn.Module):
 
         # mask 0th items(placeholder for dry-run) in log_seqs
         # would be easier if 0th item could be an exception for training
-        timeline_mask = torch.BoolTensor(log_seqs == 0)
+        timeline_mask = torch.BoolTensor(log_seqs == 0, device=self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1) # broadcast in last dim
 
         tl = seqs.shape[1] # time dim len for enforce causality
-        attention_mask = torch.tril(torch.ones((tl, tl)))
+        attention_mask = ~torch.tril(torch.ones((tl, tl), dtype=torch.bool, device=self.dev))
 
         for i in range(len(self.attention_layers)):
             # Self-attention, Q=layernorm(seqs), K=V=seqs
@@ -107,11 +108,11 @@ class SASRec(torch.nn.Module):
 
         # mask 0th items(placeholder for dry-run) in log_seqs
         # would be easier if 0th item could be an exception for training
-        timeline_mask = torch.BoolTensor(log_seqs == 0)
+        timeline_mask = torch.BoolTensor(log_seqs == 0, device=self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1) # broadcast in last dim
 
         tl = seqs.shape[1] # time dim len for enforce causality
-        attention_mask = torch.tril(torch.ones((tl, tl)))
+        attention_mask = ~torch.tril(torch.ones((tl, tl), dtype=torch.bool, device=self.dev))
 
         for i in range(len(self.attention_layers)):
             # Self-attention, Q=layernorm(seqs), K=V=seqs
@@ -129,7 +130,7 @@ class SASRec(torch.nn.Module):
             seqs *=  ~timeline_mask.unsqueeze(-1)
 
         log_feats = self.last_layernorm(seqs) # (U, T, C) -> (U, -1, C)
-        final_feat = log_feats[:, -1, :] # take last timestamp emb, seems a waste
+        final_feat = log_feats[:, -1, :] # only use last QKV classifier, a waste
 
         item_embs = self.item_emb(torch.LongTensor(item_indices)) # (U, I, C)
 
