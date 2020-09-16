@@ -1,5 +1,6 @@
 import sys
 import copy
+import torch
 import random
 import numpy as np
 from collections import defaultdict
@@ -103,9 +104,9 @@ def data_partition(fname):
             user_test[user].append(User[user][-1])
     return [user_train, user_valid, user_test, usernum, itemnum]
 
-
+# TODO: merge evaluate functions for test and val set
 # evaluate on test set
-def evaluate(model, dataset, args, sess):
+def evaluate(model, dataset, args):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
     NDCG = 0.0
@@ -113,9 +114,9 @@ def evaluate(model, dataset, args, sess):
     valid_user = 0.0
 
     if usernum>10000:
-        users = random.sample(xrange(1, usernum + 1), 10000)
+        users = random.sample(range(1, usernum + 1), 10000)
     else:
-        users = xrange(1, usernum + 1)
+        users = range(1, usernum + 1)
     for u in users:
 
         if len(train[u]) < 1 or len(test[u]) < 1: continue
@@ -136,8 +137,8 @@ def evaluate(model, dataset, args, sess):
             while t in rated: t = np.random.randint(1, itemnum + 1)
             item_idx.append(t)
 
-        predictions = -model.predict(sess, [u], [seq], item_idx)
-        predictions = predictions[0]
+        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
+        predictions = predictions[0] # - for 1st argsort DESC
 
         rank = predictions.argsort().argsort()[0]
 
@@ -147,23 +148,23 @@ def evaluate(model, dataset, args, sess):
             NDCG += 1 / np.log2(rank + 2)
             HT += 1
         if valid_user % 100 == 0:
-            print '.',
+            print('.', end="")
             sys.stdout.flush()
 
     return NDCG / valid_user, HT / valid_user
 
 
 # evaluate on val set
-def evaluate_valid(model, dataset, args, sess):
+def evaluate_valid(model, dataset, args):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
     NDCG = 0.0
     valid_user = 0.0
     HT = 0.0
     if usernum>10000:
-        users = random.sample(xrange(1, usernum + 1), 10000)
+        users = random.sample(range(1, usernum + 1), 10000)
     else:
-        users = xrange(1, usernum + 1)
+        users = range(1, usernum + 1)
     for u in users:
         if len(train[u]) < 1 or len(valid[u]) < 1: continue
 
@@ -182,7 +183,7 @@ def evaluate_valid(model, dataset, args, sess):
             while t in rated: t = np.random.randint(1, itemnum + 1)
             item_idx.append(t)
 
-        predictions = -model.predict(sess, [u], [seq], item_idx)
+        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
         predictions = predictions[0]
 
         rank = predictions.argsort().argsort()[0]
@@ -193,7 +194,7 @@ def evaluate_valid(model, dataset, args, sess):
             NDCG += 1 / np.log2(rank + 2)
             HT += 1
         if valid_user % 100 == 0:
-            print '.',
+            print('.', end="")
             sys.stdout.flush()
 
     return NDCG / valid_user, HT / valid_user
@@ -210,6 +211,7 @@ def positional_encoding(dim, sentence_length): # not used in SASRec
 
 class MultiHeadAttention(torch.nn.Module):
     def __init__(self, hidden_size, head_num):
+        super(MultiHeadAttention, self).__init__()
         Q_layer_norm = torch.nn.LayerNorm(hidden_size, eps=1e-8)
         Q_w = torch.nn.Linear(hidden_size)
         K_w = torch.nn.Linear(hidden_size)
