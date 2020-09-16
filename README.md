@@ -2,7 +2,7 @@ modified based on [paper author's tensorflow implementation](https://github.com/
 
 ```python main.py --dataset=ml-1m --train_dir=default --maxlen=200 --dropout_rate=0.2```
 
-pls check paper author's [repo](https://github.com/kang205/SASRec) for detailed intro and more complete README, and here's paper info FYI :)
+pls check paper author's [repo](https://github.com/kang205/SASRec) for detailed intro and more complete README, and here's paper bib FYI :)
 
 ```
 @inproceedings{kang2018self,
