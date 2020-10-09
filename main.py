@@ -52,12 +52,15 @@ model.train() # enable model training
 epoch_start_idx = 1
 if args.state_dict_path is not None:
     try:
-        model.load_state_dict(torch.load(args.state_dict_path))
+        model.load_state_dict(torch.load(args.state_dict_path, map_location=torch.device(args.device)))
         tail = args.state_dict_path[args.state_dict_path.find('epoch=') + 6:]
         epoch_start_idx = int(tail[:tail.find('.')]) + 1
-    except:
+    except: # in case your pytorch version is not 1.6 etc., pls debug by pdb if load weights failed
         print('failed loading state_dicts, pls check file path: ', end="")
         print(args.state_dict_path)
+        print('pdb enabled for your quick check, pls type exit() if you do not need it')
+        import pdb; pdb.set_trace()
+        
 
 if args.inference_only:
     model.eval()
