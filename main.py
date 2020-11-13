@@ -47,6 +47,16 @@ f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
 
 sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
 model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
+
+for name, param in model.named_parameters():
+    try:
+        torch.nn.init.xavier_uniform_(param.data)
+    except:
+        pass # just ignore those failed init layers
+
+# this fails embedding init 'Embedding' object has no attribute 'dim'
+# model.apply(torch.nn.init.xavier_uniform_)
+
 model.train() # enable model training
 
 epoch_start_idx = 1
@@ -77,7 +87,7 @@ t0 = time.time()
 
 for epoch in range(epoch_start_idx, args.num_epochs + 1):
     if args.inference_only: break # just to decrease identition
-    for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
+    for step in range(num_batch): # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
         u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
         u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
         pos_logits, neg_logits = model(u, seq, pos, neg)
@@ -90,7 +100,7 @@ for epoch in range(epoch_start_idx, args.num_epochs + 1):
         for param in model.item_emb.parameters(): loss += args.l2_emb * torch.norm(param)
         loss.backward()
         adam_optimizer.step()
-        # print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item())) # expected 0.4~0.6 after init few epochs
+        print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item())) # expected 0.4~0.6 after init few epochs
 
     if epoch % 20 == 0:
         model.eval()
