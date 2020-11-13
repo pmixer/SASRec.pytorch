@@ -1,3 +1,6 @@
+update, with few lines of manually initialization code added, it converges as fast as tf version. BTW, I strongly recommend checking issues for the repo from time to time for knowing new updates and details :)
+
+---
 
 update: a pretrained model added, pls run the command as below to test its performance(current perf still not as good as paper's reported results after trained more epochs, maybe due to leaky causual attention weights issue got fixed by using PyTorch 1.6's MultiHeadAttention, pls help identifying the root cause if you are interested):
 
