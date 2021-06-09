@@ -50,7 +50,7 @@ model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in o
 
 for name, param in model.named_parameters():
     try:
-        torch.nn.init.xavier_uniform_(param.data)
+        torch.nn.init.xavier_normal_(param.data)
     except:
         pass # just ignore those failed init layers
 
