@@ -26,6 +26,7 @@ parser.add_argument('--l2_emb', default=0.0, type=float)
 parser.add_argument('--device', default='cpu', type=str)
 parser.add_argument('--inference_only', default=False, type=str2bool)
 parser.add_argument('--state_dict_path', default=None, type=str)
+parser.add_argument('--split', default='ratio', type=str)
 
 args = parser.parse_args()
 if not os.path.isdir(args.dataset + '_' + args.train_dir):
@@ -36,13 +37,15 @@ f.close()
 
 if __name__ == '__main__':
     # global dataset
-    dataset = data_partition(args.dataset)
+    dataset = data_partition(args.dataset, args.split)
 
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
     num_batch = len(user_train) // args.batch_size # tail? + ((len(user_train) % args.batch_size) != 0)
     cc = 0.0
     for u in user_train:
         cc += len(user_train[u])
+    print(f'user num {usernum}')
+    print(f'item num {itemnum}')
     print('average sequence length: %.2f' % (cc / len(user_train)))
     
     f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
@@ -76,8 +79,8 @@ if __name__ == '__main__':
     
     if args.inference_only:
         model.eval()
-        t_test = evaluate(model, dataset, args)
-        print('test (NDCG@10: %.4f, HR@10: %.4f)' % (t_test[0], t_test[1]))
+        t_test = evaluate(model, dataset, args, mode='test')
+        print('test (NDCG@10: %.4f, MRR@10 %.4f, HR@10: %.4f)' % (t_test[0], t_test[1], t_test[2]))
     
     # ce_criterion = torch.nn.CrossEntropyLoss()
     # https://github.com/NVIDIA/pix2pixHD/issues/9 how could an old bug appear again...
@@ -104,15 +107,15 @@ if __name__ == '__main__':
             adam_optimizer.step()
             print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item())) # expected 0.4~0.6 after init few epochs
     
-        if epoch % 20 == 0:
+        if epoch % 1 == 0: # 20epochごとに検証？testもしてる、、
             model.eval()
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end='')
-            t_test = evaluate(model, dataset, args)
-            t_valid = evaluate_valid(model, dataset, args)
-            print('epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)'
-                    % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1]))
+            t_test = evaluate(model, dataset, args, mode='test')
+            t_valid = evaluate(model, dataset, args, mode='valid')
+            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f), test (NDCG@10: %.4f, MRR@10 %.4f, HR@10: %.4f)'
+                    % (epoch, T, t_valid[0], t_valid[1], t_valid[2], t_test[0], t_test[1], t_test[2]))
     
             f.write(str(t_valid) + ' ' + str(t_test) + '\n')
             f.flush()
