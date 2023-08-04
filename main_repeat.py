@@ -3,7 +3,7 @@ import time
 import torch
 import argparse
 
-from model import SASRec
+from sasrec_repeat_emb import SASRec_RepeatEmb
 from utils import *
 
 def str2bool(s):
@@ -39,18 +39,20 @@ if __name__ == '__main__':
     # global dataset
     dataset = data_partition(args.dataset, args.split)
 
-    [user_train, user_valid, user_test, usernum, itemnum] = dataset
+    [user_train, user_valid, user_test, repeat_train, repeat_valid, repreat_test, usernum, itemnum, repeatnum] = dataset
     num_batch = len(user_train) // args.batch_size # tail? + ((len(user_train) % args.batch_size) != 0)
     cc = 0.0
     for u in user_train:
         cc += len(user_train[u])
     print(f'user num {usernum}')
     print(f'item num {itemnum}')
+    print(f'max repeat {repeatnum}')
     print('average sequence length: %.2f' % (cc / len(user_train)))
     
     f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
-    sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
-    model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
+    
+    sampler = WarpSampler(user_train, repeat_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
+    model = SASRec_RepeatEmb(usernum, itemnum, repeatnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
     
     for name, param in model.named_parameters():
         try:
@@ -79,7 +81,7 @@ if __name__ == '__main__':
     if args.inference_only:
         model.eval()
         t_test = evaluate(model, dataset, args, mode='test')
-        print('test (NDCG@10: %.4f, MRR@10 %.4f, HR@10: %.4f)' % (t_test[0], t_test[1], t_test[2]))
+        print('test (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f)' % (t_test[0], t_test[1], t_test[2]))
     
     # ce_criterion = torch.nn.CrossEntropyLoss()
     # https://github.com/NVIDIA/pix2pixHD/issues/9 how could an old bug appear again...
@@ -92,9 +94,9 @@ if __name__ == '__main__':
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only: break # just to decrease identition
         for step in range(num_batch): # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
-            u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
-            u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
-            pos_logits, neg_logits = model(u, seq, pos, neg)
+            u, seq, repeat, pos, neg = sampler.next_batch() # tuples to ndarray
+            u, seq, repeat, pos, neg = np.array(u), np.array(seq), np.array(repeat), np.array(pos), np.array(neg)
+            pos_logits, neg_logits = model(u, seq, repeat, pos, neg)
             pos_labels, neg_labels = torch.ones(pos_logits.shape, device=args.device), torch.zeros(neg_logits.shape, device=args.device)
             # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
             adam_optimizer.zero_grad()
@@ -113,7 +115,7 @@ if __name__ == '__main__':
             print('Evaluating', end='')
             t_test = evaluate(model, dataset, args, mode='test')
             t_valid = evaluate(model, dataset, args, mode='valid')
-            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f), test (NDCG@10: %.4f, MRR@10 %.4f, HR@10: %.4f)'
+            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f), test (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f)'
                     % (epoch, T, t_valid[0], t_valid[1], t_valid[2], t_test[0], t_test[1], t_test[2]))
     
             f.write(str(t_valid) + ' ' + str(t_test) + '\n')

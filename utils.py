@@ -15,28 +15,30 @@ def random_neq(l, r, s):
     return t
 
 
-def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_queue, SEED):
+def sample_function(user_train, repeat_train, usernum, itemnum, batch_size, maxlen, result_queue, SEED):
     def sample():
 
         user = np.random.randint(1, usernum + 1)
         while len(user_train[user]) <= 1: user = np.random.randint(1, usernum + 1)
 
         seq = np.zeros([maxlen], dtype=np.int32)
+        rep = np.zeros([maxlen], dtype=np.int32)
         pos = np.zeros([maxlen], dtype=np.int32)
         neg = np.zeros([maxlen], dtype=np.int32)
         nxt = user_train[user][-1]
         idx = maxlen - 1
 
         ts = set(user_train[user])
-        for i in reversed(user_train[user][:-1]): # ここらへんだけどseparateを先に変えたほうがいいかも
+        for i, r in zip(reversed(user_train[user][:-1], reversed(repeat_train[user][:-1]))): # ここらへんだけどseparateを先に変えたほうがいいかも
             seq[idx] = i
+            rep[idx] = r
             pos[idx] = nxt
             if nxt != 0: neg[idx] = random_neq(1, itemnum + 1, ts)
             nxt = i
             idx -= 1
             if idx == -1: break
 
-        return (user, seq, pos, neg)
+        return (user, seq, rep, pos, neg)
 
     np.random.seed(SEED)
     while True:
@@ -48,12 +50,13 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
 
 
 class WarpSampler(object):
-    def __init__(self, User, usernum, itemnum, batch_size=64, maxlen=10, n_workers=1):
-        self.result_queue = Queue(maxsize=n_workers * 10) # なぜこれでu, seq, repeat, pos, negが取得できるのか
+    def __init__(self, User, Repeat, usernum, itemnum, batch_size=64, maxlen=10, n_workers=1):
+        self.result_queue = Queue(maxsize=n_workers * 10)
         self.processors = []
         for i in range(n_workers):
             self.processors.append(
                 Process(target=sample_function, args=(User,
+                                                      Repeat,
                                                       usernum,
                                                       itemnum,
                                                       batch_size,

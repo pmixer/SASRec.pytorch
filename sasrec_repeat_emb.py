@@ -24,19 +24,19 @@ class PointWiseFeedForward(torch.nn.Module):
 # https://github.com/pmixer/TiSASRec.pytorch/blob/master/model.py
 
 class SASRec_RepeatEmb(torch.nn.Module):
-    def __init__(self, user_num, item_num, max_repeat,args):
+    def __init__(self, user_num, item_num, repeat_num, args):
         super(SASRec_RepeatEmb, self).__init__()
 
         self.user_num = user_num
         self.item_num = item_num
-        self.max_repeat = max_repeat
+        self.repeat_num = repeat_num
         self.dev = args.device
 
         # TODO: loss += args.l2_emb for regularizing embedding vectors during training
         # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
         self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
         self.pos_emb = torch.nn.Embedding(args.maxlen, args.hidden_units) # TO IMPROVE
-        self.repeat_emb = torch.nn.Embedding(self.max_repeat+1, args.hidden_units, padding_idx=0) # repeat embedding
+        self.repeat_emb = torch.nn.Embedding(self.repeat_num+1, args.hidden_units, padding_idx=0) # repeat embedding
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
         self.concat_layer = torch.nn.Linear(
