@@ -93,7 +93,7 @@ def data_partition(fname, split='ratio'):
     # assume user/item index starting from 1
     f = open('data/%s.txt' % fname, 'r')
     for line in f:
-        u, i, t, r = line.rstrip().split(' ')
+        u, i, t, r, _ = line.rstrip().split(' ')
         u = int(u)
         i = int(i)
         t = float(t)
