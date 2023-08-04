@@ -28,7 +28,7 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
         idx = maxlen - 1
 
         ts = set(user_train[user])
-        for i in reversed(user_train[user][:-1]):
+        for i in reversed(user_train[user][:-1]): # ここらへんだけどseparateを先に変えたほうがいいかも
             seq[idx] = i
             pos[idx] = nxt
             if nxt != 0: neg[idx] = random_neq(1, itemnum + 1, ts)
@@ -49,7 +49,7 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
 
 class WarpSampler(object):
     def __init__(self, User, usernum, itemnum, batch_size=64, maxlen=10, n_workers=1):
-        self.result_queue = Queue(maxsize=n_workers * 10)
+        self.result_queue = Queue(maxsize=n_workers * 10) # なぜこれでu, seq, repeat, pos, negが取得できるのか
         self.processors = []
         for i in range(n_workers):
             self.processors.append(
@@ -78,19 +78,28 @@ class WarpSampler(object):
 def data_partition(fname, split='ratio'):
     usernum = 0
     itemnum = 0
+    repeatnum = 0
     User = defaultdict(list)
+    Repeat = defaultdict(list)
     user_train = {}
+    repeat_train = {}
     user_valid = {}
+    repeat_valid = {}
     user_test = {}
+    repeat_test = {}
     # assume user/item index starting from 1
     f = open('data/%s.txt' % fname, 'r')
     for line in f:
-        u, i, _, _, _ = line.rstrip().split(' ')
+        u, i, t, r = line.rstrip().split(' ')
         u = int(u)
         i = int(i)
+        t = float(t)
+        r = int(r)
         usernum = max(u, usernum)
         itemnum = max(i, itemnum)
+        repeatnum = max(r, repeatnum)
         User[u].append(i)
+        Repeat[u].append(r)
 
     if split == 'ratio':
         for user in User:
@@ -99,6 +108,9 @@ def data_partition(fname, split='ratio'):
                 user_train[user] = User[user]
                 user_valid[user] = []
                 user_test[user] = []
+                repeat_train[user] = Repeat[user]
+                repeat_valid[user] = []
+                repeat_test[user] = []
             else:
                 # 8:1:1で分割
                 train_len = int(nfeedback * 0.8)
@@ -107,6 +119,9 @@ def data_partition(fname, split='ratio'):
                 user_train[user] = User[user][:train_len]
                 user_valid[user] = User[user][train_len:train_len + valid_len]
                 user_test[user] = User[user][train_len + valid_len:]
+                repeat_train[user] = Repeat[user][:train_len]
+                repeat_valid[user] = Repeat[user][train_len:train_len + valid_len]
+                repeat_test[user] = Repeat[user][train_len + valid_len:]
 
     elif split == 'LOO':
         for user in User:
@@ -121,7 +136,7 @@ def data_partition(fname, split='ratio'):
                 user_valid[user].append(User[user][-2])
                 user_test[user] = []
                 user_test[user].append(User[user][-1])
-    return [user_train, user_valid, user_test, usernum, itemnum]
+    return [user_train, user_valid, user_test, repeat_train, repeat_valid, repeat_test, usernum, repeatnum, itemnum]
 
 # evaluate
 def evaluate(model, dataset, args, mode):
