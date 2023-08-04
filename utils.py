@@ -82,10 +82,10 @@ def data_partition(fname, split='ratio'):
     User = defaultdict(list)
     Repeat = defaultdict(list)
     user_train = {}
-    repeat_train = {}
     user_valid = {}
-    repeat_valid = {}
     user_test = {}
+    repeat_train = {}
+    repeat_valid = {}
     repeat_test = {}
     # assume user/item index starting from 1
     f = open('data/%s.txt' % fname, 'r')
