@@ -144,7 +144,7 @@ def data_partition(fname, split='ratio'):
 # evaluate
 def evaluate(model, dataset, args, mode):
     assert mode in {'valid', 'test'}, "mode must be either 'valid' or 'test'"
-    [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
+    [train, valid, test, _, _, _, usernum, _, itemnum] = copy.deepcopy(dataset)
 
     RECALL = 0.0
     MRR = 0.0
