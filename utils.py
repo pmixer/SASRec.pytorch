@@ -144,7 +144,7 @@ def data_partition(fname, split='ratio'):
 # evaluate
 def evaluate(model, dataset, args, mode):
     assert mode in {'valid', 'test'}, "mode must be either 'valid' or 'test'"
-    [train, valid, test, _, _, _, usernum, _, itemnum] = copy.deepcopy(dataset)
+    [user_train, user_valid, user_test, repeat_train, repeat_valid, repeat_test, usernum, repeatnum, itemnum] = copy.deepcopy(dataset)
 
     RECALL = 0.0
     MRR = 0.0
@@ -158,24 +158,27 @@ def evaluate(model, dataset, args, mode):
         users = range(1, usernum + 1)
     for u in tqdm(users):
 
-        if len(train[u]) < 1 or len(valid[u]) < 1 or len(test[u]) < 1: continue
+        if len(user_train[u]) < 1 or len(user_valid[u]) < 1 or len(user_test[u]) < 1: continue
 
         seq = np.zeros([args.maxlen], dtype=np.int32)
+        rep = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
         if mode == 'test':
-            for i in valid[u]:
+            for i, r in zip(user_valid[u], repeat_valid[u]):
                 seq[idx] = i
+                rep[idx] = r
                 idx -= 1
                 if idx == 0: break
-        for i in reversed(train[u]):
+        for i, r in zip(reversed(user_train[u]), reversed(repeat_train[u])):
             if idx == 0: break
             seq[idx] = i
+            rep[idx] = r
             idx -= 1
             if idx == -1: break
         if mode == 'valid':
-            item_idx = valid[u]
+            item_idx = user_valid[u]
         elif mode == 'test':
-            item_idx = test[u]
+            item_idx = user_test[u]
         
         correct_len = len(item_idx)
 
@@ -190,7 +193,7 @@ def evaluate(model, dataset, args, mode):
         t = np.setdiff1d(t, item_idx) 
         item_idx.extend(t)
 
-        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
+        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], [rep], item_idx]])
         predictions = predictions[0]  # - for 1st argsort DESC
 
         ranks = predictions.argsort().argsort()[0:correct_len].tolist() # 正解データの疑似ランクを取得
