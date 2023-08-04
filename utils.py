@@ -29,7 +29,7 @@ def sample_function(user_train, repeat_train, usernum, itemnum, batch_size, maxl
         idx = maxlen - 1
 
         ts = set(user_train[user])
-        for i, r in zip(reversed(user_train[user][:-1], reversed(repeat_train[user][:-1]))): # ここらへんだけどseparateを先に変えたほうがいいかも
+        for i, r in zip(reversed(user_train[user][:-1]), reversed(repeat_train[user][:-1])): # ここらへんだけどseparateを先に変えたほうがいいかも
             seq[idx] = i
             rep[idx] = r
             pos[idx] = nxt
