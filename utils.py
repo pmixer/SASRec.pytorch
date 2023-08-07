@@ -145,11 +145,18 @@ def data_partition(fname, split='ratio'):
 def evaluate(model, dataset, args, mode):
     assert mode in {'valid', 'test'}, "mode must be either 'valid' or 'test'"
     [user_train, user_valid, user_test, repeat_train, repeat_valid, repeat_test, usernum, repeatnum, itemnum] = copy.deepcopy(dataset)
-
-    RECALL = 0.0
-    MRR = 0.0
-    NDCG = 0.0
-    HT = 0.0
+    print('----------')
+    print(f'mode: {mode}')
+    print(f'user_valid: {user_valid}')
+    print(f'user_test: {user_test}')
+    RECALL_10 = 0.0
+    RECALL_20 = 0.0
+    MRR_10 = 0.0
+    MRR_20 = 0.0
+    NDCG_10 = 0.0
+    NDCG_20 = 0.0
+    HT_10 = 0.0
+    HT_20 = 0.0
     valid_user = 0.0
 
     if usernum > 10000:
@@ -198,9 +205,11 @@ def evaluate(model, dataset, args, mode):
 
         ranks = predictions.argsort().argsort()[0:correct_len].tolist() # 正解データのランクを取得
 
+        print(f'rank: {ranks}')
+
         valid_user += 1
 
-        # 20未満のアイテム数をカウント
+        # 10未満のアイテム数をカウント
         c = 0
         top = 20
         h = 0
@@ -211,10 +220,26 @@ def evaluate(model, dataset, args, mode):
                 if r < top:
                     top = r
         
-        RECALL += c / correct_len
-        HT += h
+        RECALL_10 += c / correct_len
+        HT_10 += h
         if top < 20:
-            MRR += 1.0 / (top + 1)
+            MRR_10 += 1.0 / (top + 1)
+        
+        # 20未満のアイテム数をカウント
+        c = 0
+        top = 20
+        h = 0
+        for r in ranks:
+            if r < 20: # この数字はtopkによる
+                c += 1
+                h = 1
+                if r < top:
+                    top = r
+        
+        RECALL_20 += c / correct_len
+        HT_20 += h
+        if top < 20:
+            MRR_20 += 1.0 / (top + 1)
 
         # if rank < 10:
         #     # RECALL += 
@@ -225,4 +250,4 @@ def evaluate(model, dataset, args, mode):
         #     print('.', end="")
         #     sys.stdout.flush()
 
-    return RECALL / valid_user, MRR / valid_user, HT / valid_user
+    return RECALL_10 / valid_user, RECALL_20 / valid_user, MRR_10 / valid_user, MRR_20 / valid_user, HT_10 / valid_user, HT_20 / valid_user
