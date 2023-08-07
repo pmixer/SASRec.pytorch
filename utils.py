@@ -145,10 +145,6 @@ def data_partition(fname, split='ratio'):
 def evaluate(model, dataset, args, mode):
     assert mode in {'valid', 'test'}, "mode must be either 'valid' or 'test'"
     [user_train, user_valid, user_test, repeat_train, repeat_valid, repeat_test, usernum, repeatnum, itemnum] = copy.deepcopy(dataset)
-    print('----------')
-    print(f'mode: {mode}')
-    print(f'user_valid: {user_valid}')
-    print(f'user_test: {user_test}')
     RECALL_10 = 0.0
     RECALL_20 = 0.0
     MRR_10 = 0.0
@@ -204,8 +200,6 @@ def evaluate(model, dataset, args, mode):
         predictions = predictions[0]  # - for 1st argsort DESC
 
         ranks = predictions.argsort().argsort()[0:correct_len].tolist() # 正解データのランクを取得
-
-        print(f'rank: {ranks}')
 
         valid_user += 1
 

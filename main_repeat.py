@@ -130,30 +130,51 @@ if __name__ == '__main__':
             print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f))'
                     % (epoch, T, t_valid[0], t_valid[1], t_valid[2],  t_valid[3], t_valid[4], t_valid[5]))
     
-            f.write(str(t_valid) + ' ' + str(t_test) + '\n')
+            f.write(str(t_valid) + '\n')
             f.flush()            
             t0 = time.time()
             model.train()
         
         if early_count == 10:
             print('early stop at epoch {}'.format(epoch))
-            t_test = evaluate(model, dataset, args, mode='test')
-            print('epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
-                    % (epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
             folder = args.dataset + '_' + args.train_dir
             fname = 'BestModel.MRR={}.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(early_stop, best_epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
             torch.save(best_model_params, os.path.join(folder, fname))
-            break
-    
-        if epoch == args.num_epochs:
+
+            # 最も評価指標が高かったエポックのモデルのパスを指定します。
+            best_model_path = os.path.join(folder, fname)
+
+            # モデルの重みをロードします。
+            model.load_state_dict(torch.load(best_model_path))
+
+            # ロードした重みを用いてテストの評価を行います。
             t_test = evaluate(model, dataset, args, mode='test')
             print('epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
                     % (epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
+            f.write(str(t_test) + '\n')
+            f.flush()
+            
+            break
+    
+        if epoch == args.num_epochs:
             folder = args.dataset + '_' + args.train_dir
             fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(args.num_epochs, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
             torch.save(model.state_dict(), os.path.join(folder, fname))
+
+            # 最も評価指標が高かったエポックのモデルのパスを指定します。
+            best_model_path = os.path.join(folder, fname)
+
+            # モデルの重みをロードします。
+            model.load_state_dict(torch.load(best_model_path))
+
+            # ロードした重みを用いてテストの評価を行います。
+            t_test = evaluate(model, dataset, args, mode='test')
+            print('epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
+                    % (epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
+            f.write(str(t_test) + '\n')
+            f.flush()
     
     f.close()
     sampler.close()
