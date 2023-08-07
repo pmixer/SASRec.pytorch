@@ -70,7 +70,7 @@ class SASRec_RepeatEmb(torch.nn.Module):
 
     def log2feats(self, log_seqs, log_repeat):
         seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
-        seqs *= self.item_emb.embedding_dim ** 0.5 # これをrepeat mbeddingにも適用するかどうか
+        seqs *= self.item_emb.embedding_dim ** 0.5 # これをrepeat mbeddingにも適用するかどうか、実験してみるしかないか
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
         
         repeat = self.repeat_emb(torch.LongTensor(log_repeat).to(self.dev))

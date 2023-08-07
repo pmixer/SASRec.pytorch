@@ -116,7 +116,6 @@ if __name__ == '__main__':
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end='')
-            t_test = evaluate(model, dataset, args, mode='test')
             t_valid = evaluate(model, dataset, args, mode='valid')
             
             # early stopping
@@ -128,9 +127,8 @@ if __name__ == '__main__':
             else:
                 early_count += 1
             
-            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
-                    % (epoch, T, t_valid[0], t_valid[1], t_valid[2],  t_valid[3], t_valid[4], t_valid[5], 
-                                 t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
+            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f))'
+                    % (epoch, T, t_valid[0], t_valid[1], t_valid[2],  t_valid[3], t_valid[4], t_valid[5]))
     
             f.write(str(t_valid) + ' ' + str(t_test) + '\n')
             f.flush()            
@@ -139,6 +137,9 @@ if __name__ == '__main__':
         
         if early_count == 10:
             print('early stop at epoch {}'.format(epoch))
+            t_test = evaluate(model, dataset, args, mode='test')
+            print('epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
+                    % (epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
             folder = args.dataset + '_' + args.train_dir
             fname = 'BestModel.MRR={}.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(early_stop, best_epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
@@ -146,6 +147,9 @@ if __name__ == '__main__':
             break
     
         if epoch == args.num_epochs:
+            t_test = evaluate(model, dataset, args, mode='test')
+            print('epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
+                    % (epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
             folder = args.dataset + '_' + args.train_dir
             fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(args.num_epochs, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
