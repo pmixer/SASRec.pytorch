@@ -3,3 +3,4 @@ __pycache__/
 *_default/
 
 data/
+wandb/
