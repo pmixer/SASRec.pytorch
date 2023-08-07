@@ -115,8 +115,9 @@ if __name__ == '__main__':
             print('Evaluating', end='')
             t_test = evaluate(model, dataset, args, mode='test')
             t_valid = evaluate(model, dataset, args, mode='valid')
-            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f), test (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f)'
-                    % (epoch, T, t_valid[0], t_valid[1], t_valid[2], t_test[0], t_test[1], t_test[2]))
+            print('epoch:%d, time: %f(s), valid (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
+                    % (epoch, T, t_valid[0], t_valid[1], t_valid[2],  t_valid[3], t_valid[4], t_valid[5], 
+                                 t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
     
             f.write(str(t_valid) + ' ' + str(t_test) + '\n')
             f.flush()
