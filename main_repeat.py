@@ -3,6 +3,7 @@ import time
 import torch
 import argparse
 import wandb
+from tqdm import tqdm
 
 from model import SASRec
 from sasrec_repeat_emb import SASRec_RepeatEmb
@@ -125,7 +126,7 @@ if __name__ == '__main__':
     
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only: break # just to decrease identition
-        for step in range(num_batch): # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
+        for step in tqdm(range(num_batch)): # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
             if args.model == 'SASRrec':
                 u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
                 u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
@@ -143,7 +144,6 @@ if __name__ == '__main__':
             for param in model.item_emb.parameters(): loss += args.l2_emb * torch.norm(param)
             loss.backward()
             adam_optimizer.step()
-            print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item())) # expected 0.4~0.6 after init few epochs
     
         if epoch % 1 == 0: # 20epochごとに検証？testもしてる、、
             model.eval()
