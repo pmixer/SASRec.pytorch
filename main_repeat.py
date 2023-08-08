@@ -4,6 +4,7 @@ import torch
 import argparse
 import wandb
 
+from model import SASRec
 from sasrec_repeat_emb import SASRec_RepeatEmb
 from utils import *
 
@@ -14,6 +15,8 @@ def str2bool(s):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True)
+parser.add_argument('--model', required=True)
+parser.add_argument('--project', required=True)
 parser.add_argument('--train_dir', required=True)
 parser.add_argument('--batch_size', default=128, type=int)
 parser.add_argument('--lr', default=0.001, type=float)
@@ -37,11 +40,11 @@ with open(os.path.join(args.dataset + '_' + args.train_dir, 'args.txt'), 'w') as
 f.close()
 
 wandb.init(
-    project='test',
-    # name=f"SASRecRepeatEmb_no_scaling", 
-    name=f"test", 
+    project=f"{args.project}",
+    name=f"{args.model}", 
     config={
         'dataset': args.dataset,
+        'model': args.model,
         'batch_size': args.batch_size,
         'lr': args.lr,
         'maxlen': args.maxlen,
@@ -75,7 +78,10 @@ if __name__ == '__main__':
     f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
     
     sampler = WarpSampler(user_train, repeat_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
-    model = SASRec_RepeatEmb(usernum, itemnum, repeatnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
+    if args.model == 'SASRec':
+        model = SASRec(usernum, itemnum, args).to(args.device)
+    elif args.model == 'SASRec_RepeatEmb':
+        model = SASRec_RepeatEmb(usernum, itemnum, repeatnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
     
     for name, param in model.named_parameters():
         try:
@@ -103,7 +109,7 @@ if __name__ == '__main__':
     
     if args.inference_only:
         model.eval()
-        t_test = evaluate(model, dataset, args, mode='test')
+        t_test = evaluate(model, args.model, dataset, args, mode='test')
         print('test (Rcall@10: %.4f, MRR@10 %.4f, HR@10: %.4f)' % (t_test[0], t_test[1], t_test[2]))
     
     # ce_criterion = torch.nn.CrossEntropyLoss()
@@ -120,9 +126,14 @@ if __name__ == '__main__':
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only: break # just to decrease identition
         for step in range(num_batch): # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
-            u, seq, repeat, pos, neg = sampler.next_batch() # tuples to ndarray
-            u, seq, repeat, pos, neg = np.array(u), np.array(seq), np.array(repeat), np.array(pos), np.array(neg)
-            pos_logits, neg_logits = model(u, seq, repeat, pos, neg)
+            if args.model == 'SASRrec':
+                u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
+                u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
+                pos_logits, neg_logits = model(u, seq, pos, neg)
+            elif args.model == 'SASRec_RepeatEmb':
+                u, seq, repeat, pos, neg = sampler.next_batch() # tuples to ndarray
+                u, seq, repeat, pos, neg = np.array(u), np.array(seq), np.array(repeat), np.array(pos), np.array(neg)
+                pos_logits, neg_logits = model(u, seq, repeat, pos, neg)
             pos_labels, neg_labels = torch.ones(pos_logits.shape, device=args.device), torch.zeros(neg_logits.shape, device=args.device)
             # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
             adam_optimizer.zero_grad()
@@ -139,7 +150,7 @@ if __name__ == '__main__':
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end='')
-            t_valid = evaluate(model, dataset, args, mode='valid')
+            t_valid = evaluate(model, args.model, dataset, args, mode='valid')
             
             # early stopping
             if early_stop < t_valid[3]:
@@ -162,7 +173,7 @@ if __name__ == '__main__':
         
         if early_count == 10:
             print('early stop at epoch {}'.format(epoch))
-            folder = args.dataset + '_' + args.train_dir
+            folder = args.model + '_' + args.dataset + '_' + args.train_dir
             fname = 'BestModel.MRR={}.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(early_stop, best_epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
             torch.save(best_model_params, os.path.join(folder, fname))
@@ -174,7 +185,7 @@ if __name__ == '__main__':
             model.load_state_dict(torch.load(best_model_path))
 
             # ロードした重みを用いてテストの評価を行います。
-            t_test = evaluate(model, dataset, args, mode='test')
+            t_test = evaluate(model, args.model, dataset, args, mode='test')
             print('best epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
                     % (best_epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
             f.write(str(t_test) + '\n')
@@ -197,7 +208,7 @@ if __name__ == '__main__':
             model.load_state_dict(torch.load(best_model_path))
 
             # ロードした重みを用いてテストの評価を行います。
-            t_test = evaluate(model, dataset, args, mode='test')
+            t_test = evaluate(model, args.model, dataset, args, mode='test')
             print('epoch:%d, time: %f(s), test (Rcall@10: %.4f, Rcall@20: %.4f, MRR@10: %.4f, MRR@20: %.4f, HR@10: %.4f, HR@20: %.4f)'
                     % (epoch, T, t_test[0], t_test[1], t_test[2], t_test[3], t_test[4], t_test[5]))
             f.write(str(t_test) + '\n')
