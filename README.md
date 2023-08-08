@@ -27,3 +27,8 @@ pls check paper author's [repo](https://github.com/kang205/SASRec) for detailed 
   organization={IEEE}
 }
 ```
+
+### run
+```
+python main_repeat.py --dataset=lfm2b --project=test_3 --model=SASRec --train_dir=default --maxlen=50 --device=cpu --num_epochs=1 --split=ratio & python main_repeat.py --dataset=lfm2b --project=test_3 --model=SASRec_RepeatEmb --train_dir=default --maxlen=50 --device=cpu --num_epochs=1 --split=ratio
+```
