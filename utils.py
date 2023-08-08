@@ -142,7 +142,7 @@ def data_partition(fname, split='ratio'):
     return [user_train, user_valid, user_test, repeat_train, repeat_valid, repeat_test, usernum, repeatnum, itemnum]
 
 # evaluate
-def evaluate(model, dataset, args, mode):
+def evaluate(model, model_name, dataset, args, mode):
     assert mode in {'valid', 'test'}, "mode must be either 'valid' or 'test'"
     [user_train, user_valid, user_test, repeat_train, repeat_valid, repeat_test, usernum, repeatnum, itemnum] = copy.deepcopy(dataset)
     RECALL_10 = 0.0
@@ -196,7 +196,10 @@ def evaluate(model, dataset, args, mode):
         t = np.setdiff1d(t, item_idx) 
         item_idx.extend(t)
 
-        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], [rep], item_idx]])
+        if model_name == 'SASRec':
+            predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
+        elif model_name == 'SASRec_RepeatEmb':
+            predictions = -model.predict(*[np.array(l) for l in [[u], [seq], [rep], item_idx]])
         predictions = predictions[0]  # - for 1st argsort DESC
 
         ranks = predictions.argsort().argsort()[0:correct_len].tolist() # 正解データのランクを取得
