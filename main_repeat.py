@@ -126,14 +126,13 @@ if __name__ == '__main__':
     
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only: break # just to decrease identition
+        print('epoch: ', epoch)
         for step in tqdm(range(num_batch)): # tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
+            u, seq, repeat, pos, neg = sampler.next_batch() # tuples to ndarray
+            u, seq, repeat, pos, neg = np.array(u), np.array(seq), np.array(repeat), np.array(pos), np.array(neg)
             if args.model == 'SASRec':
-                u, seq, pos, neg = sampler.next_batch() # tuples to ndarray
-                u, seq, pos, neg = np.array(u), np.array(seq), np.array(pos), np.array(neg)
                 pos_logits, neg_logits = model(u, seq, pos, neg)
             elif args.model == 'SASRec_RepeatEmb':
-                u, seq, repeat, pos, neg = sampler.next_batch() # tuples to ndarray
-                u, seq, repeat, pos, neg = np.array(u), np.array(seq), np.array(repeat), np.array(pos), np.array(neg)
                 pos_logits, neg_logits = model(u, seq, repeat, pos, neg)
             pos_labels, neg_labels = torch.ones(pos_logits.shape, device=args.device), torch.zeros(neg_logits.shape, device=args.device)
             # print("\neye ball check raw_logits:"); print(pos_logits); print(neg_logits) # check pos_logits > 0, neg_logits < 0
@@ -149,7 +148,7 @@ if __name__ == '__main__':
             model.eval()
             t1 = time.time() - t0
             T += t1
-            print('Evaluating', end='')
+            print('Evaluating')
             t_valid = evaluate(model, args.model, dataset, args, mode='valid')
             
             # early stopping
@@ -173,6 +172,7 @@ if __name__ == '__main__':
         
         if early_count == 10:
             print('early stop at epoch {}'.format(epoch))
+            print('testing')
             folder = args.model + '_' + args.dataset + '_' + args.train_dir
             fname = 'BestModel.MRR={}.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(early_stop, best_epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
@@ -196,6 +196,7 @@ if __name__ == '__main__':
             break
     
         if epoch == args.num_epochs:
+            print('testing')
             folder = args.dataset + '_' + args.train_dir
             fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
             fname = fname.format(args.num_epochs, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
