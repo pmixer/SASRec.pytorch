@@ -123,6 +123,7 @@ if __name__ == '__main__':
 
     early_stop = -1
     early_count = 0
+    best_epoch = 0
     
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only: break # just to decrease identition
@@ -144,7 +145,7 @@ if __name__ == '__main__':
             loss.backward()
             adam_optimizer.step()
     
-        if epoch % 1 == 0: # 20epochごとに検証？testもしてる、、
+        if epoch % 1 == 0:
             model.eval()
             t1 = time.time() - t0
             T += t1
