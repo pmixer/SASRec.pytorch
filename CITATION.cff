@@ -1,0 +1,18 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: SASRec.pytorch
+message: the pytorch implementation of SASRec model
+type: software
+authors:
+  - given-names: Zan
+    family-names: Huang
+    email: dreaming_hz@hotmail.com
+    affiliation: NVIDIA
+    orcid: 'https://orcid.org/0000-0003-3585-9467'
+identifiers:
+  - type: url
+    value: 'https://github.com/pmixer/SASRec.pytorch'
+    description: SASRec.pytorch github repository
+repository-code: 'https://github.com/pmixer/SASRec.pytorch'
