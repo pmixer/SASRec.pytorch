@@ -13,6 +13,13 @@ python main.py --device=cuda --dataset=ml-1m --train_dir=default --state_dict_pa
 
 ```
 
+output for each run would be slightly random, as negative samples are randomly sampled, here's my output for two consecutive runs:
+
+```
+1st run - test (NDCG@10: 0.5897, HR@10: 0.8190)
+2nd run - test (NDCG@10: 0.5918, HR@10: 0.8225)
+```
+
 pls check paper author's [repo](https://github.com/kang205/SASRec) for detailed intro and more complete README, and here's the paper bib FYI :)
 
 ```
