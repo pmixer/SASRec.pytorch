@@ -34,7 +34,7 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
     def sample(uid):
 
         # uid = np.random.randint(1, usernum + 1)
-        while len(user_train[uid]) <= 1: user = np.random.randint(1, usernum + 1)
+        while len(user_train[uid]) <= 1: uid = np.random.randint(1, usernum + 1)
 
         seq = np.zeros([maxlen], dtype=np.int32)
         pos = np.zeros([maxlen], dtype=np.int32)
