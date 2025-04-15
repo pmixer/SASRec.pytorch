@@ -15,6 +15,17 @@ Pls feel free to do these experiments to have fun, and pls consider citing the a
 }
 ```
 
+or this bib for short
+
+```
+@article{huang2025revisiting,
+  title={Revisiting Self-Attentive Sequential Recommendation},
+  author={Huang, Zan},
+  journal={arXiv preprint arXiv:2504.09596},
+  year={2025}
+}
+```
+
 For questions or collaborations, pls create a new issue in this repo or drop me an email using the email address as shared.
 
 ---
