@@ -11,7 +11,7 @@ Pls feel free to do these experiments to have fun, and pls consider citing the a
 }
 ```
 
-For questions or collaborations, pls feel free to create a new issue in this repo or drop me an email using the email address as shared.
+For questions or collaborations, pls create a new issue in this repo or drop me an email using the email address as shared.
 
 ---
 
