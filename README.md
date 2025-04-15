@@ -3,10 +3,14 @@ Update: in https://arxiv.org/html/2504.09596v1, I listed the ideas worth to try 
 Pls feel free to do these experiments to have fun, and pls consider citing the article if it somehow helps in your recsys exploration:
 
 ```
-@article{huang2025revisiting,
+@article{huang2025revisiting_sasrec,
   title={Revisiting Self-Attentive Sequential Recommendation},
   author={Huang, Zan},
-  journal={arXiv preprint arXiv:2504.09596},
+  journal={CoRR},
+  volume={abs/2504.09596},
+  url={https://arxiv.org/abs/2504.09596},
+  eprinttype={arXiv},
+  eprint={2504.09596},
   year={2025}
 }
 ```
