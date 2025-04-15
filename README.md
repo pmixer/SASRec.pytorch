@@ -1,6 +1,6 @@
-Update: in https://arxiv.org/html/2504.09596v1, I listed the ideas worth to try but not yet due to my limited bandwidth in sparse time.
+update: in https://arxiv.org/html/2504.09596v1, I listed the ideas worth to try but not yet due to my limited bandwidth in sparse time.
 
-Pls feel free to do these experiments to have fun, and pls consider citing the article if it somehow helps in your recsys exploration:
+pls feel free to do these experiments to have fun, and pls consider citing the article if it somehow helps in your recsys exploration:
 
 ```
 @article{huang2025revisiting_sasrec,
@@ -26,11 +26,15 @@ or this bib for short
 }
 ```
 
-For questions or collaborations, pls create a new issue in this repo or drop me an email using the email address as shared.
+paper source code in `latex` folder.
+
+for questions or collaborations, pls create a new issue in this repo or drop me an email using the email address as shared.
 
 ---
 
 modified based on [paper author's tensorflow implementation](https://github.com/kang205/SASRec), switching to PyTorch(v1.6) for simplicity, fixed issues like positional embedding usage etc. (making it harder to overfit, except for that, in recsys, personalization=overfitting sometimes)
+
+code in `python` folder.
 
 to train:
 

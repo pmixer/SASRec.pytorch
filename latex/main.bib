@@ -1,0 +1,162 @@
+@inproceedings{sasrec,
+  title={Self-attentive sequential recommendation},
+  author={Kang, Wang-Cheng and McAuley, Julian},
+  booktitle={2018 IEEE International Conference on Data Mining (ICDM)},
+  pages={197--206},
+  year={2018},
+  organization={IEEE}
+}
+
+@article{hllm,
+title={HLLM: Enhancing Sequential Recommendations via Hierarchical Large Language Models for Item and User Modeling},
+author={Junyi Chen and Lu Chi and Bingyue Peng and Zehuan Yuan},
+journal={arXiv preprint arXiv:2409.12740},
+year={2024}
+}
+
+@inproceedings{transformer,
+ author = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and Kaiser, \L ukasz and Polosukhin, Illia},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {I. Guyon and U. Von Luxburg and S. Bengio and H. Wallach and R. Fergus and S. Vishwanathan and R. Garnett},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {Attention is All you Need},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf},
+ volume = {30},
+ year = {2017}
+}
+
+@inproceedings{wideanddeep,
+author = {Cheng, Heng-Tze and Koc, Levent and Harmsen, Jeremiah and Shaked, Tal and Chandra, Tushar and Aradhye, Hrishi and Anderson, Glen and Corrado, Greg and Chai, Wei and Ispir, Mustafa and Anil, Rohan and Haque, Zakaria and Hong, Lichan and Jain, Vihan and Liu, Xiaobing and Shah, Hemal},
+title = {Wide \& Deep Learning for Recommender Systems},
+year = {2016},
+isbn = {9781450347952},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/2988450.2988454},
+doi = {10.1145/2988450.2988454},
+abstract = {Generalized linear models with nonlinear feature transformations are widely used for large-scale regression and classification problems with sparse inputs. Memorization of feature interactions through a wide set of cross-product feature transformations are effective and interpretable, while generalization requires more feature engineering effort. With less feature engineering, deep neural networks can generalize better to unseen feature combinations through low-dimensional dense embeddings learned for the sparse features. However, deep neural networks with embeddings can over-generalize and recommend less relevant items when the user-item interactions are sparse and high-rank. In this paper, we present Wide \& Deep learning---jointly trained wide linear models and deep neural networks---to combine the benefits of memorization and generalization for recommender systems. We productionized and evaluated the system on Google Play, a commercial mobile app store with over one billion active users and over one million apps. Online experiment results show that Wide \& Deep significantly increased app acquisitions compared with wide-only and deep-only models. We have also open-sourced our implementation in TensorFlow.},
+booktitle = {Proceedings of the 1st Workshop on Deep Learning for Recommender Systems},
+pages = {7–10},
+numpages = {4},
+keywords = {Recommender Systems, Wide \& Deep Learning},
+location = {Boston, MA, USA},
+series = {DLRS 2016}
+}
+
+@inproceedings{bert4rec,
+author = {Sun, Fei and Liu, Jun and Wu, Jian and Pei, Changhua and Lin, Xiao and Ou, Wenwu and Jiang, Peng},
+title = {BERT4Rec: Sequential Recommendation with Bidirectional Encoder Representations from Transformer},
+year = {2019},
+isbn = {9781450369763},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3357384.3357895},
+doi = {10.1145/3357384.3357895},
+abstract = {Modeling users' dynamic preferences from their historical behaviors is challenging and crucial for recommendation systems. Previous methods employ sequential neural networks to encode users' historical interactions from left to right into hidden representations for making recommendations. Despite their effectiveness, we argue that such left-to-right unidirectional models are sub-optimal due to the limitations including: begin enumerate* [label=seriesitshapealph*upshape)] item unidirectional architectures restrict the power of hidden representation in users' behavior sequences; item they often assume a rigidly ordered sequence which is not always practical. end enumerate* To address these limitations, we proposed a sequential recommendation model called BERT4Rec, which employs the deep bidirectional self-attention to model user behavior sequences. To avoid the information leakage and efficiently train the bidirectional model, we adopt the Cloze objective to sequential recommendation, predicting the random masked items in the sequence by jointly conditioning on their left and right context. In this way, we learn a bidirectional representation model to make recommendations by allowing each item in user historical behaviors to fuse information from both left and right sides. Extensive experiments on four benchmark datasets show that our model outperforms various state-of-the-art sequential models consistently.},
+booktitle = {Proceedings of the 28th ACM International Conference on Information and Knowledge Management},
+pages = {1441–1450},
+numpages = {10},
+keywords = {bidirectional sequential model, cloze, sequential recommendation},
+location = {Beijing, China},
+series = {CIKM '19}
+}
+
+@inproceedings{bert,
+  title={BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},
+  author={ Devlin, Jacob  and  Chang, Ming Wei  and  Lee, Kenton  and  Toutanova, Kristina },
+  booktitle={Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, vol. 6. long and short papers: Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL HLT 2019), 2-7 June 2019, Minneapolis, Minnesota, USA},
+  year={2019},
+}
+
+@inproceedings{visa,
+author = {Chen, Huiyuan and Lin, Yusan and Pan, Menghai and Wang, Lan and Yeh, Chin-Chia Michael and Li, Xiaoting and Zheng, Yan and Wang, Fei and Yang, Hao},
+title = {Denoising Self-Attentive Sequential Recommendation},
+year = {2022},
+isbn = {9781450392785},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3523227.3546788},
+doi = {10.1145/3523227.3546788},
+abstract = {Transformer-based sequential recommenders are very powerful for capturing both short-term and long-term sequential item dependencies. This is mainly attributed to their unique self-attention networks to exploit pairwise item-item interactions within the sequence. However, real-world item sequences are often noisy, which is particularly true for implicit feedback. For example, a large portion of clicks do not align well with user preferences, and many products end up with negative reviews or being returned. As such, the current user action only depends on a subset of items, not on the entire sequences. Many existing Transformer-based models use full attention distributions, which inevitably assign certain credits to irrelevant items. This may lead to sub-optimal performance if Transformers are not regularized properly. Here we propose the Rec-denoiser model for better training of self-attentive recommender systems. In Rec-denoiser, we aim to adaptively prune noisy items that are unrelated to the next item prediction. To achieve this, we simply attach each self-attention layer with a trainable binary mask to prune noisy attentions, resulting in sparse and clean attention distributions. This largely purifies item-item dependencies and provides better model interpretability. In addition, the self-attention network is typically not Lipschitz continuous and is vulnerable to small perturbations. Jacobian regularization is further applied to the Transformer blocks to improve the robustness of Transformers for noisy sequences. Our Rec-denoiser is a general plugin that is compatible to many Transformers. Quantitative results on real-world datasets show that our Rec-denoiser outperforms the state-of-the-art baselines.},
+booktitle = {Proceedings of the 16th ACM Conference on Recommender Systems},
+pages = {92–101},
+numpages = {10},
+keywords = {Differentiable Mask, Noise Analysis, Sequential Recommendation, Sparse Transformer},
+location = {Seattle, WA, USA},
+series = {RecSys '22}
+}
+
+@inproceedings{gold,
+author = {Klenitskiy, Anton and Vasilev, Alexey},
+title = {Turning Dross Into Gold Loss: is BERT4Rec really better than SASRec?},
+year = {2023},
+isbn = {9798400702419},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3604915.3610644},
+doi = {10.1145/3604915.3610644},
+abstract = {Recently sequential recommendations and next-item prediction task has become increasingly popular in the field of recommender systems. Currently, two state-of-the-art baselines are Transformer-based models SASRec and BERT4Rec. Over the past few years, there have been quite a few publications comparing these two algorithms and proposing new state-of-the-art models. In most of the publications, BERT4Rec achieves better performance than SASRec. But BERT4Rec uses cross-entropy over softmax for all items, while SASRec uses negative sampling and calculates binary cross-entropy loss for one positive and one negative item. In our work, we show that if both models are trained with the same loss, which is used by BERT4Rec, then SASRec will significantly outperform BERT4Rec both in terms of quality and training speed. In addition, we show that SASRec could be effectively trained with negative sampling and still outperform BERT4Rec, but the number of negative examples should be much larger than one.},
+booktitle = {Proceedings of the 17th ACM Conference on Recommender Systems},
+pages = {1120–1125},
+numpages = {6},
+keywords = {BERT4Rec, SASRec, recommender systems, sequential recsys},
+location = {Singapore, Singapore},
+series = {RecSys '23}
+}
+
+@inproceedings{ncfvsmf,
+author = {Rendle, Steffen and Krichene, Walid and Zhang, Li and Anderson, John},
+title = {Neural Collaborative Filtering vs. Matrix Factorization Revisited},
+year = {2020},
+isbn = {9781450375832},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3383313.3412488},
+doi = {10.1145/3383313.3412488},
+abstract = {Embedding based models have been the state of the art in collaborative filtering for over a decade. Traditionally, the dot product or higher order equivalents have been used to combine two or more embeddings, e.g., most notably in matrix factorization. In recent years, it was suggested to replace the dot product with a learned similarity e.g. using a multilayer perceptron (MLP). This approach is often referred to as neural collaborative filtering (NCF). In this work, we revisit the experiments of the NCF paper that popularized learned similarities using MLPs. First, we show that with a proper hyperparameter selection, a simple dot product substantially outperforms the proposed learned similarities. Second, while a MLP can in theory approximate any function, we show that it is non-trivial to learn a dot product with an MLP. Finally, we discuss practical issues that arise when applying MLP based similarities and show that MLPs are too costly to use for item recommendation in production environments while dot products allow to apply very efficient retrieval algorithms. We conclude that MLPs should be used with care as embedding combiner and that dot products might be a better default choice.},
+booktitle = {Proceedings of the 14th ACM Conference on Recommender Systems},
+pages = {240–248},
+numpages = {9},
+keywords = {Item Recommendation, Matrix Factorization, Neural Collaborative Filtering},
+location = {Virtual Event, Brazil},
+series = {RecSys '20}
+}
+
+@software{Huang_SASRec_pytorch,
+author = {Huang, Zan},
+title = {PyTorch implementation for SASRec},
+url = {https://github.com/pmixer/SASRec.pytorch},
+year={2020}
+}
+
+@inproceedings{rnra,
+author = {Zhai, Jiaqi and Gong, Zhaojie and Wang, Yueming and Sun, Xiao and Yan, Zheng and Li, Fu and Liu, Xing},
+title = {Revisiting Neural Retrieval on Accelerators},
+year = {2023},
+isbn = {9798400701030},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3580305.3599897},
+doi = {10.1145/3580305.3599897},
+abstract = {Retrieval finds a small number of relevant candidates from a large corpus for information retrieval and recommendation applications. A key component of retrieval is to model (user, item) similarity, which is commonly represented as the dot product of two learned embeddings. This formulation permits efficient inference, commonly known as Maximum Inner Product Search (MIPS). Despite its popularity, dot products cannot capture complex user-item interactions, which are multifaceted and likely high rank. We hence examine non-dot-product retrieval settings on accelerators, and propose mixture of logits (MoL), which models (user, item) similarity as an adaptive composition of elementary similarity functions. This new formulation is expressive, capable of modeling high rank (user, item) interactions, and further generalizes to the long tail. When combined with a hierarchical retrieval strategy, h-indexer, we are able to scale up MoL to 100M corpus on a single GPU with latency comparable to MIPS baselines. On public datasets, our approach leads to uplifts of up to 77.3\% in hit rate (HR). Experiments on a large recommendation surface at Meta showed strong metric gains and reduced popularity bias, validating the proposed approach's performance and improved generalization.},
+booktitle = {Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
+pages = {5520–5531},
+numpages = {12},
+keywords = {recommender systems, non-mips retrieval, nearest neighbor search, information retrieval, hierarchical retrieval, candidate generation},
+location = {Long Beach, CA, USA},
+series = {KDD '23}
+}
+
+@inproceedings{hstu,
+author = {Zhai, Jiaqi and Liao, Lucy and Liu, Xing and Wang, Yueming and Li, Rui and Cao, Xuan and Gao, Leon and Gong, Zhaojie and Gu, Fangda and He, Jiayuan and Lu, Yinghai and Shi, Yu},
+title = {Actions speak louder than words: trillion-parameter sequential transducers for generative recommendations},
+year = {2024},
+publisher = {JMLR.org},
+abstract = {Large-scale recommendation systems are characterized by their reliance on high cardinality, heterogeneous features and the need to handle tens of billions of user actions on a daily basis. Despite being trained on huge volume of data with thousands of features, most Deep Learning Recommendation Models (DLRMs) in industry fail to scale with compute. Inspired by success achieved by Transformers in language and vision domains, we revisit fundamental design choices in recommendation systems. We reformulate recommendation problems as sequential transduction tasks within a generative modeling framework ("Generative Recommenders"), and propose a new architecture, HSTU, designed for high cardinality, non-stationary streaming recommendation data. HSTU outperforms baselines over synthetic and public datasets by up to 65.8\% in NDCG, and is 5.3x to 15.2x faster than FlashAttention2-based Transformers on 8192 length sequences. HSTUbased Generative Recommenders, with 1.5 trillion parameters, improve metrics in online A/B tests by 12.4\% and have been deployed on multiple surfaces of a large internet platform with billions of users. More importantly, the model quality of Generative Recommenders empirically scales as a power-law of training compute across three orders of magnitude, up to GPT-3/LLaMa-2 scale, which reduces carbon footprint needed for future model developments, and further paves the way for the first foundation models in recommendations.},
+booktitle = {Proceedings of the 41st International Conference on Machine Learning},
+articleno = {2414},
+numpages = {26},
+location = {Vienna, Austria},
+series = {ICML'24}
+}

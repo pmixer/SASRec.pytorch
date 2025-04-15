@@ -1,0 +1,378 @@
+\documentclass{article}
+
+\usepackage{arxiv}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{subfig}
+\usepackage{csquotes}
+\usepackage{listings}
+% \usepackage{lipsum}
+
+\title{Revisiting Self-Attentive Sequential Recommendation}
+
+\author{
+    Zan Huang \thanks{Doing research on personal devices in sparse time, for internet users welfare, opinions are on my own.}\\
+    \texttt{huangzan@gatech.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+
+% lots of random neurons, anyone could be anything
+% but it may make it hard to determine which one be what
+% so sometimes need to break the symmetricity
+% like attention layer do fusion in one dim
+% ffn layer do fusion in another dim
+% to avoid "traffic jam" in learning
+
+% LLM 能帮 rec model 说人话(解释为什么选择推荐了这个)
+% 以及办人事(听到某个角色的某个目标或者需求之后能做实施)就好了
+% 不然 BERT 就已经用了好久了，self attention 也是
+
+% 还是尽快提出来这是和 LLM 最近的推荐子领域
+% 但发展轨迹却差异很大，有很多值得琢磨的点
+% 看后续实验能不能更贴近问题本质为好
+
+% 哪儿哪儿都是
+Recommender systems are ubiquitous in on-line services to drive businesses.
+% 好多都是序列推荐
+And many sequential recommender models were deployed in these systems to enhance personalization. 
+% SASRec 至今仍常作为基线
+The approach of using the transformer decoder as the sequential recommender was proposed years ago and is still a strong baseline in recent works.
+% 为啥没 scaling up？
+But this kind of sequential recommender model did not scale up well, compared to language models.
+% 有很多点还是值得重新审视的
+Quite some details in the classical self-attentive sequential recommender model could be revisited,
+% 同时也有新实验是值得做的
+and some new experiments may lead to new findings,
+without changing the general model structure
+which was the focus of many previous works.
+% 希望能为尝试进一步提升推荐效果的探索者提供参考。
+In this paper, we show the details and propose new experiment methodologies for future research on sequential recommendation, in hope to motivate further exploration to new findings in this area. % for potential reference.
+
+\end{abstract}
+
+% \section{Introduction}
+% Information overload is real
+
+% The long live SASRec made me interested
+
+% Why you need scaling
+
+% Why you failed scaling
+
+% \begin{lstlisting}[language=Python]
+% // u didn't got used piece of code
+% \end{lstlisting}
+
+\section{Problem Setting}
+
+% 直接说问题
+Given the user set $U = \{u_1, u_2, ..., u_m\}$, the item set $I = \{i_1, i_2, ..., i_n\}$, and the interaction history represented by the $(u_x, i_y, t_z)$ records. The target of recommender models is to accurately predict the best-fit item $i_y^*$ when $u_x$ requests for service, so $i_y^*$ could be actively and better served to maximize the user's or the platform's interest.
+
+Sequential recommenders work in a further simplified setting, by sorting user-interacted items into a sequence $S_{u_x} = [i_{x_1}, i_{x_2}, ..., i_{x_{l}}]$ of length $l$ according to the interaction timestamp. And try to predict $i_y^*$ based on $S_{u_x}$.
+
+In the offline experiment, we can hide part of the interaction history and take $i_{hidden}$ as $i^*$ to train or evaluate the recommender model. Different metrics can be applied in this phase to guide the model to effectively uncover $i_{hidden}$.
+
+In the online experiment, the performance of the recommender model would be evaluated systematically by A/B testing. Under the assumption that good $i^*$ predictions lead to more interactions or other observable platform growth signals.
+
+\section{Related Work}
+% scope 就是看 SASRec，只看相关文章
+
+SASRec\cite{sasrec} was proposed following Transformer\cite{transformer} in which the decoder structure could be used for sequential recommendation, by replacing tokens with item IDs. Then BERT4Rec\cite{bert4rec} following BERT\cite{bert} used the encoder for sequential recommendation and claimed to achieve a better result.
+
+More recent research shows that SASRec could be further improved by elaborating details such as the loss function \cite{gold}, and mask usage \cite{visa}, making it a strong long-lived baseline.% as referred in \cite{rnra} etc.
+
+Referring to the current trend of applying large language models on the recommender system, the scalability issue of SASRec was paid more attention. HSTU\cite{hstu} try to resolve the issue by customizing the attention layers for the recommendation task, HLLM\cite{hllm} try to use pre-trained language model directly in recommendation.
+
+% BERT 就开始用 LM 4 rec 了，HLLM 有收益也符合预期
+% 有 x to text 的话，text 就能拿给这类模型理解 item
+Both of these approaches are promising, as language models have been used extensively in industry recommender systems for years, and attention layer customization helps to better fit the data set and utilize the compute resource.
+
+% 但这些更像 WAR，没有说明之前为什么不能 scale up。
+% 多加层多加头那收益没有 nlp 里那么自如(虽然后者数据更有规律)
+Recommender systems were successfully scaled out to hyperscale intelligent services over the years, mainly by trade-off storage resources for better personalization.
+But why did recommender models like SASRec fail in scaling up by trade-off compute for more precise prediction has not been well addressed, which is the focus of this work. 
+
+% \subsection{HSTU}
+% activation silu
+
+% HLLM\cite{hllm}.
+% activation gelu, sampled softmax
+
+% HSTU\cite{hstu}.
+% already tradeoff mem for acc, now more comp for acc
+
+% 拿算力换效果和万物皆可 token 两条路都不错
+% 不过我不是来卷模型的，是来帮忙扫清障碍的
+
+\section{The Details}
+
+In this section, we present some details of the self-attentive sequential recommender model to lay the foundation for further exploration and explain why we propose new experiments to revisit this paradigm.
+
+% there's a gap between research and industry
+% though many research findings align with industry practice
+
+% groundtruth laid by baseline model
+% slower better ones may also fail due to speed
+
+\subsection{Personalization}
+% 另一个 Zan Huang 的 thesis 有讨论过 content based 大家很早就想
+% 但 cf 出来的效果更好，恐怕不止是内容理解技术发展的问题
+% 纯内容就丧失了社会属性，没有社会属性个性就不成立
+% 个性最后基本是某个空间内排列组合的其中一种可区分状态，得先接空间才行
+
+% 没有随机性，可能动态性也就没了，跟 llm 说车轱辘话一样
+
+There is no personalization in the original SASRec\cite{sasrec} model, as it is without explicit use of user embeddings. The claim was that the user could be well represented by the interaction history. But in fact, anyone who interacts with $[i_x, i_y]$ would receive the same recommended item $i_z$ deterministically,
+if without the randomness introduced in sampling.
+
+This setting may force the model to prefer the common choice instead of a more personalized choice for users, as it is still a non-personalized recommendation algorithm, but in a higher-dimensional sequential space to
+perform a "dimensional collapse strike".
+(Items are well represented by embeddings, as long as we support embeddings CRUD
+in the vector database to track item
+set dynamics.
+While users are more like random walkers in the item space,
+SASRec better captured the user-side dynamics
+compared to the approaches do vanilla user-item embedding distance computation.
+Something like the fourier transform may be needed
+to bridge user embeddings and item embeddings
+and preserve the dynamics considering the relationship
+like the one between the time domain and the frequency domain.
+)
+
+Learning \emph{average face} by the transformer-based model may make something beautiful enough and quite useful in fields such as language processing, but may limit the effectiveness of recommendation due to the lack of personalization and fail the scaling up attempts when stacking more self-attention layers. 
+
+%, which can boost early recommendation performance but limiting it .
+
+% kinda of like learning the average face which is 
+
+% so it will be the average face, so for llms
+
+% 画龙点睛, 大家都在画龙, 人类照镜子, 平均脸，不放量子哪儿来智能
+
+% 我读文章也是一遍一遍地从头读，跟 llm auto regress 一样，不够聪明
+
+% \subsubsection{collaborative filters works as you are not so personal, but behaves kind of random}
+
+% \subsection{sequence and dynamics}
+
+\subsection{Recommendation}
+
+Unlike other tasks, the data used in recommender model training is not the
+ground-truth, but the output generated when conditioned on the baseline model, by which I mean the interacted item may be one of the recommended items by the baseline model instead of a random pick. So, the offline training mainly shows the model's data-fitting capability.
+% Interesting self feed, groundtruth generated by baseline
+And personalization could be used as an interchangeable term of overfitting sometimes for the recommendation task. 
+
+Moreover, for the sequential recommendation task, turning a movie rating dataset into which-movie-to-be-rated-nextly dataset may be using it in an unexpected way. We should double-check these details before trying to scale up models.
+
+% sometimes even encourage overfitting
+% does it make sense to predict next to be rated movie?
+
+\subsection{Embedding}
+
+% positional embedding 
+
+Learning the embeddings for recommender models is like adjusting the item positions in a high-dimensional supermarket.
+And the Transformer\cite{transformer} model feels like an embedding factory, with self-attention layers being production lines.
+
+In SASRec\cite{sasrec}, there are two kinds of embedding used: item embedding $e_i$ and positional embedding $e_p$.
+There were some issues with embedding use in the PyTorch implementation of the model\footnote{https://github.com/pmixer/SASRec.pytorch}.
+When the embedding values of the padding item are not initialized as $0$, it may work more like a bias term instead of padding.
+Positional embeddings added to padding items may also be mistakenly used to have \emph{nothing} incorrectly contributing \emph{something} to the final output.
+These issues affect the model performance but are sometimes hidden by randomness in negative sampling.
+
+More importantly, there seems to be something wrong in the SASRec\cite{sasrec} use of positional embedding.
+The position of the interacted item should be relative to the position of the prediction, but the absolute position was used instead.
+
+More concretely, given the interaction history represented by a sequence $S = [i_{x_1}, i_{x_2}, i_{x_3}, ..., i_{x_l}]$ of length $l$,
+there are $l-1$ items to be masked for training,
+predicting $i_y$ given sequence $[i_{x_1}]$ and label $i_{x_2}$,
+predicting $i_y$ given sequence $[i_{x_1}, i_{x_2}]$ and label $i_{x_3}$,
+lastly predicting $i_y$ given sequence $[i_{x_1}, i_{x_2}, ..., i_{x_{l-1}}]$ and label $i_{x_l}$.
+
+When turning the input sequences into embedding sequences, we expect transformations like
+$[i_{x_1}] \xrightarrow{} [(e_{i_{x_1}} + e_{p_1})]$,
+$[i_{x_1}, i_{x_2}] \xrightarrow{} [(e_{i_{x_1}} + e_{p_2}),  (e_{i_{x_2}} + e_{p_1})]$,
+...,
+$[i_{x_1}, i_{x_2}, ..., i_{x_{l-1}}] \xrightarrow{} [(e_{i_{x_1}} + e_{p_{l-1}}),  (e_{i_{x_2}} + e_{p_{l-2}}), ..., (e_{i_{x_{l-1}}} + e_{p_1})]$.
+
+But the trick was used in SASRec to pack the whole sequence into a batch of training samples using masks for causality in self-attention layers,
+causing the positional embedding use not following the expected way except for the last position prediction, e.g.
+$[i_{x_1}, i_{x_2}, ..., i_{x_{l-2}}] \xrightarrow{} [(e_{i_{x_1}} + e_{p_{l-2}}),  (e_{i_{x_2}} + e_{p_{l-3}}), ..., (e_{i_{x_{l-2}}} + e_{p_1})]$ was expected for the $i_{x_{l-1}}$ prediction,
+but $[i_{x_1}, i_{x_2}, ..., i_{x_{l-2}}] \xrightarrow{} [(e_{i_{x_1}} + e_{p_{l-1}}),  (e_{i_{x_2}} + e_{p_{l-2}}), ..., (e_{i_{x_{l-2}}} + e_{p_2})]$ was used.
+This problem may decrease the effectiveness of positional embedding and cause disorders in the learning procedure.
+
+These details show the room for better positional embedding use of SASRec, corrections may help to further scale it up.
+
+% $S_{input} = [i_1, i_2, ..., i_{n-1}]$
+
+% $S_{label} = [i_2, i_3, ..., i_n]$
+
+% $S_{input_{padded}}[i_0, i_0, i_0, ..., i_1, ..., i_n]$
+
+% $E_{used} = [e_{i_0} + p_0, e_{i_0} + p_0, ..., e_{i_1} + p_, ..., e_{i_n}]$
+
+% $E_{expanded} = []$
+
+
+% Industry research different: monolith
+
+% Big data, chaos, and order
+
+% 数据集里面可能没有 groundtruth 可学，只是上一个 baseline 左右出的结果
+% 这也是为什么 D&W offline 结果没差多少上线后效果好得多
+
+\section{Proposed Experiments}
+
+According to the observed details presented.
+Here are some experiments worth trying,
+to fix related issues,
+and further improve or scale-up the SASRec-like model.
+We list the proposed experiments as in the following sections.
+
+\subsection{Correction}
+
+As claimed before, the positional embedding practice needs to be corrected and could be further improved,
+which may require reorganizing the training samples,
+e.g. batching all $length=1$ sequences together,
+then all $length=2$ sequences and so on,
+to make sure the learned positional embedding
+got applied in the correct way semantically.
+
+The padding operation and the truncation operation
+could also be removed after the modification,
+to make better use of sequences,
+though it may require more advanced
+Transformer engineering practice to ensure efficiency.
+
+Moreover, as items in the sequences are just hidden instead of being unknown in the model training phase,
+the prediction accuracy or the self-attention layer generated embedding quality
+of known items in a sequence could be used
+for adjusting the weights for the next item prediction or constructing more advanced positional embedding techniques.
+% which has not been explored yet according to my limited information. % denosing 之类的某种程度上可以算
+
+% not-the-end items are just masked, but known, they could be used to adjust weights for final prediction but not used yet
+
+% and why is positional embedding needed(a sequence bias term?), how to further improve it?
+
+\subsection{Autoregression}
+
+Although sequential recommender models are designed for next item prediction tasks,
+they could be used to do predictions in the autoregressive way,
+like the practice in language or speech research.
+
+When longer outputs are generated,
+the more we know about the model's characteristics,
+so to further optimize it.
+The previous practice of leaving the last item for the test set and the second last item for validation is relatively conservative.
+
+% autoregressively generating more, not just the next one
+
+% llm 那边出来的也是 token，两边对比有了很不错的结合点
+
+\subsection{Tokenization}
+
+The structure of the model could be shaped by the task and the data used.
+Although the SASRec model was based on the Transformer model developed for language processing,
+the dataset used in language model training and sequential recommender model training have not been thoroughly compared according to our survey.
+
+Considering the simplified setting in sequential recommendation,
+the comparison of token sequences and item-id sequences can be performed to study the dataset differences in two different domains.
+We expect the item-id sequences to be more random, and much more sparse than language token sequences, challenging the model learning capability in a different way,
+and may require \emph{the reverse process of tokenization}(taking tokenization as turning combination of basic items to new items)
+in production level recommender systems to breakdown and reduce trillions of items into combinations of more basic elements to really scale up the model, while it may suffer "ADHD" otherwise.
+
+\subsection{Duality}
+
+% 既然说 user 可以完全用 item seq 表示，那反过来也可以
+% 正了反反了正还可以，如果不加约束的话，估计像
+% 谷歌来回翻译那样结果越来越离谱
+
+Based on \emph{"you are what you interacted"} assumption,
+if the user can be well represented by a sequence of items,
+encoded by another model generated embedding from a sequence of item embeddings,
+we can also try to use a sequence of these user embeddings to represent the item,
+and enforce the high-order item embeddings to be consistent
+with the original item embedding,
+to improve the consistency and robustness of embeddings and models.(If you have ever tried machine translators to convert the text between two languages back and forth to see how the outputs gradually out of control, that is what I mean by the need of consistency and robustness.)
+
+We may also start from user embeddings,
+try to use user sequences to represent items,
+and predict the next user for an item
+for interaction prediction.
+It would taste more like an advertisement system,
+to recommend users to items.
+% and may pave the way for new findings.
+
+
+% items 
+
+% consistency, sequences recursively gen another
+
+% boomerang and consistency, like translating google translated words
+
+% the shape of data? and it's relation to evolution of model?
+
+\subsection{Sampling}
+
+The negative sampling used in SASRec introduced the randomness into the model training and inference process,
+but it is also somehow biased,
+as interacted items got excluded from the pool,
+and the ground-truth item was manually inserted into the pool.
+We could try more sampling algorithms for items retrieval,
+referring to the practice in industry.
+
+For user-generated content datasets, 
+we could even try to apply the constraint
+like \emph{"how many items you interacted,
+how many times your items get recommended"},
+to check the balance between fairness and business.
+
+
+% as many are UGC, how many you consumed, how many times you got recommended
+
+% fairness, try how many you browsed, how many you got recommended
+
+% \subsection{Civilization}
+
+% 能 Gen 出 item 向全自动化跨步更好，但似乎缺少文明化
+% 让人看东西容易进恐怖谷
+
+% Already a system socialized, but do not be evil.
+
+% Socialized
+
+% 所有鼓吹开智驾睡觉的都得纠正才对，不管用户爱不爱看
+% 有些更新得是下落之后才上涨，互联网公司的做法不怕每个 Q 都要增长有可能搞出局部最优。
+
+\section{Future Work}
+
+% as expect more coding work than the original SASRec.
+We need to do these experiments systematically
+and may publish the work named \emph{Scaling Up Self-Attentive Sequential Recommenders} if it goes well.
+Please feel free to do your own exploration based on
+the presented stuff if interested.
+
+% \section{Conclusion}
+% 实验还没做，暂时没 conclusion
+% 但感觉这东西写出来其实比 survey 更有营养。。。
+% 你的茧房就是我的旷野。
+
+\bibliographystyle{unsrt}  
+\bibliography{main}
+
+\end{document}
