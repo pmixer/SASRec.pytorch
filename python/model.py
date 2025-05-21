@@ -16,7 +16,6 @@ class PointWiseFeedForward(torch.nn.Module):
     def forward(self, inputs):
         outputs = self.dropout2(self.conv2(self.relu(self.dropout1(self.conv1(inputs.transpose(-1, -2))))))
         outputs = outputs.transpose(-1, -2) # as Conv1D requires (N, C, Length)
-        outputs += inputs
         return outputs
 
 # pls use the following self-made multihead attention layer
@@ -30,6 +29,7 @@ class SASRec(torch.nn.Module):
         self.user_num = user_num
         self.item_num = item_num
         self.dev = args.device
+        self.norm_first = args.norm_first
 
         # TODO: loss += args.l2_emb for regularizing embedding vectors during training
         # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
@@ -76,15 +76,19 @@ class SASRec(torch.nn.Module):
 
         for i in range(len(self.attention_layers)):
             seqs = torch.transpose(seqs, 0, 1)
-            Q = self.attention_layernorms[i](seqs)
-            mha_outputs, _ = self.attention_layers[i](Q, seqs, seqs, 
-                                            attn_mask=attention_mask)
-                                            # need_weights=False) this arg do not work?
-            seqs = Q + mha_outputs
-            seqs = torch.transpose(seqs, 0, 1)
-
-            seqs = self.forward_layernorms[i](seqs)
-            seqs = self.forward_layers[i](seqs)
+            if self.norm_first:
+                x = self.attention_layernorms[i](seqs)
+                mha_outputs, _ = self.attention_layers[i](x, x, x,
+                                                attn_mask=attention_mask)
+                seqs = seqs + mha_outputs
+                seqs = torch.transpose(seqs, 0, 1)
+                seqs = seqs + self.forward_layers[i](self.forward_layernorms[i](seqs))
+            else:
+                mha_outputs, _ = self.attention_layers[i](seqs, seqs, seqs,
+                                                attn_mask=attention_mask)
+                seqs = self.attention_layernorms[i](seqs + mha_outputs)
+                seqs = torch.transpose(seqs, 0, 1)
+                seqs = self.forward_layernorms[i](seqs + self.forward_layers[i](seqs))
 
         log_feats = self.last_layernorm(seqs) # (U, T, C) -> (U, -1, C)
 
