@@ -1,0 +1,13 @@
+[package]
+name = "sasrec"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+candle-core = { version = "0.9.1", default-features = false }
+candle-nn = { version = "0.9.1", default-features = false }
+candle-transformers = { version = "0.9.1", default-features = false }
+
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"] 
