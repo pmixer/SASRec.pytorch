@@ -6,21 +6,6 @@ import numpy as np
 from collections import defaultdict
 from multiprocessing import Process, Queue
 
-def build_index(dataset_name):
-
-    ui_mat = np.loadtxt('data/%s.txt' % dataset_name, dtype=np.int32)
-
-    n_users = ui_mat[:, 0].max()
-    n_items = ui_mat[:, 1].max()
-
-    u2i_index = [[] for _ in range(n_users + 1)]
-    i2u_index = [[] for _ in range(n_items + 1)]
-
-    for ui_pair in ui_mat:
-        u2i_index[ui_pair[0]].append(ui_pair[1])
-        i2u_index[ui_pair[1]].append(ui_pair[0])
-
-    return u2i_index, i2u_index
 
 # sampler for batch generation
 def random_neq(l, r, s):
@@ -90,6 +75,74 @@ class WarpSampler(object):
         for p in self.processors:
             p.terminate()
             p.join()
+
+
+def duality_dataset(fname):
+    uid_set = set()
+    iid_set = set()
+    max_uid = 0
+    max_iid = 0
+    u2i_index = defaultdict(list)
+    f = open('data/%s.txt' % fname, 'r')
+    for line in f:
+        u, i = line.rstrip().split(' ')
+        u = int(u)
+        i = int(i)
+        uid_set.add(u)
+        iid_set.add(i)
+        max_uid = max(u, max_uid)
+        max_iid = max(i, max_iid)
+        u2i_index[u].append(i)
+
+    valid_pairs = set()
+    test_pairs = set()
+
+    for uid in u2i_index:
+        iid_seq = u2i_index[uid]
+        if (len(iid_seq) >= 3):
+            valid_pairs.add((uid, iid_seq[-2]))
+            test_pairs.add((uid, iid_seq[-1]))
+
+    valid_lists = []
+    for valid_pair in valid_pairs:
+        u, i = valid_pair
+        left_iid = iid_set - set(u2i_index[u]) - set([i])
+        valid_lists.append([u, i, np.random.permutation(list(left_iid))[:100].tolist()])
+
+    test_lists = []
+    for test_pair in test_pairs:
+        u, i = test_pair
+        left_iid = iid_set - set(u2i_index[u]) - set([i])
+        test_lists.append([u, i, np.random.permutation(list(left_iid))[:100].tolist()])
+
+    f.close()
+
+    f = open('data/%s.txt' % fname, 'r')
+    training_set = defaultdict(list)
+    for line in f:
+        u, i = line.rstrip().split(' ')
+        u = int(u)
+        i = int(i)
+        pair = (u, i)
+        if pair not in valid_pairs and pair not in test_pairs:
+            training_set[i].append(u)
+
+    f.close()
+
+    return max_uid, max_iid, training_set, valid_lists, test_lists
+
+
+def get_dp_mat(model, max_uid, max_iid, training_set, args):
+    # model.log2feats
+    pass
+
+
+def duality_validate(dp_mat, valid_lists):
+    pass
+
+
+def duality_evaluate(dp_mat, test_lists):
+    pass
 
 
 # train/val/test data generation
@@ -175,7 +228,7 @@ def evaluate(model, dataset, args):
 
 
 # evaluate on val set
-def evaluate_valid(model, dataset, args):
+def validate(model, dataset, args):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
     NDCG = 0.0

@@ -36,25 +36,23 @@ with open(os.path.join(args.dataset + '_' + args.train_dir, 'args.txt'), 'w') as
 f.close()
 
 if __name__ == '__main__':
-
-    u2i_index, i2u_index = build_index(args.dataset)
     
     # global dataset
-    dataset = data_partition(args.dataset)
+    max_uid, max_iid, training_set, valid_lists, test_lists = duality_dataset(args.dataset)
 
-    [user_train, user_valid, user_test, usernum, itemnum] = dataset
-    # num_batch = len(user_train) // args.batch_size # tail? + ((len(user_train) % args.batch_size) != 0)
-    num_batch = (len(user_train) - 1) // args.batch_size + 1
+    # import pdb; pdb.set_trace()
+
+    num_batch = (len(training_set) - 1) // args.batch_size + 1
     cc = 0.0
-    for u in user_train:
-        cc += len(user_train[u])
-    print('average sequence length: %.2f' % (cc / len(user_train)))
+    for k in training_set:
+        cc += len(training_set[k])
+    print('average sequence length: %.2f' % (cc / len(training_set)))
     
     f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
     f.write('epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n')
     
-    sampler = WarpSampler(user_train, usernum, itemnum, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
-    model = SASRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
+    sampler = WarpSampler(training_set, max_iid, max_uid, batch_size=args.batch_size, maxlen=args.maxlen, n_workers=3)
+    model = SASRec(max_iid, max_uid, args).to(args.device) # no ReLU activation in original SASRec implementation?
     
     for name, param in model.named_parameters():
         try:
@@ -85,7 +83,8 @@ if __name__ == '__main__':
     
     if args.inference_only:
         model.eval()
-        t_test = evaluate(model, dataset, args)
+        dp_mat = get_dp_mat(model, max_uid, max_iid, training_set, args)
+        t_test = duality_evaluate(dp_mat, test_lists)
         print('test (NDCG@10: %.4f, HR@10: %.4f)' % (t_test[0], t_test[1]))
     
     # ce_criterion = torch.nn.CrossEntropyLoss()
@@ -119,8 +118,9 @@ if __name__ == '__main__':
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end='')
-            t_test = evaluate(model, dataset, args)
-            t_valid = evaluate_valid(model, dataset, args)
+            dp_mat = get_dp_mat(model, max_uid, max_iid, training_set, args)
+            t_valid = duality_validate(dp_mat, valid_lists)
+            t_test = duality_evaluate(dp_mat, test_lists)
             print('epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)'
                     % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1]))
 
