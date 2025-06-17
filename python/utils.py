@@ -19,7 +19,7 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
     def sample(uid):
 
         # uid = np.random.randint(1, usernum + 1)
-        while len(user_train[uid]) <= 1: uid = np.random.randint(1, usernum + 1)
+        # while len(user_train[uid]) <= 1: uid = np.random.randint(1, usernum + 1)
 
         seq = np.zeros([maxlen], dtype=np.int32)
         pos = np.zeros([maxlen], dtype=np.int32)
@@ -39,15 +39,17 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
         return (uid, seq, pos, neg)
 
     np.random.seed(SEED)
-    uids = np.arange(1, usernum+1, dtype=np.int32)
-    counter = 0
+    # uids = np.arange(1, usernum+1, dtype=np.int32)
+    uids = list(user_train.keys())
+    # counter = 0
     while True:
-        if counter % usernum == 0:
-            np.random.shuffle(uids)
+        # if counter % usernum == 0:
+            # np.random.shuffle(uids)
         one_batch = []
         for i in range(batch_size):
-            one_batch.append(sample(uids[counter % usernum]))
-            counter += 1
+            # one_batch.append(sample(uids[counter % usernum]))
+            one_batch.append(sample(np.random.choice(uids)))
+            # counter += 1
         result_queue.put(zip(*one_batch))
 
 
@@ -134,15 +136,69 @@ def duality_dataset(fname):
 
 def get_dp_mat(model, max_uid, max_iid, training_set, args):
     # model.log2feats
-    pass
+    seqs = np.zeros([max_iid + 1, args.maxlen], dtype=np.int32)
+    for i in training_set:
+        seq_len = len(training_set[i])
+        seq_len = min(args.maxlen, seq_len)
+        seqs[i][args.maxlen - seq_len:] = training_set[i][:seq_len]
+
+    features = model.log2feats(seqs)[:, 0, :]
+    dp_mat = model.item_emb.weight @ features.transpose(1, 0)
+
+    return dp_mat.cpu().detach().numpy()
 
 
 def duality_validate(dp_mat, valid_lists):
-    pass
+    NDCG = 0.0
+    HT = 0.0
+    valid_user = 0.0
+
+    for valid_list in valid_lists:
+        predictions = [0] * 101
+        u = valid_list[0]
+        valid_list = [valid_list[1]] + valid_list[2]
+        assert(len(valid_list) == 101)
+        for idx in range(101):
+            predictions[idx] = -dp_mat[u][valid_list[idx]]
+
+        rank = np.array(predictions).argsort().argsort()[0]
+        valid_user += 1
+
+        if rank < 10:
+            NDCG += 1 / np.log2(rank + 2)
+            HT += 1
+        if valid_user % 100 == 0:
+            print('.', end="")
+            sys.stdout.flush()
+
+    return NDCG / valid_user, HT / valid_user
 
 
 def duality_evaluate(dp_mat, test_lists):
-    pass
+    NDCG = 0.0
+    HT = 0.0
+    test_user = 0.0
+
+    for test_list in test_lists:
+        predictions = [0] * 101
+        # import pdb; pdb.set_trace()
+        u = test_list[0]
+        test_list = [test_list[1]] + test_list[2]
+        assert(len(test_list) == 101)
+        for idx in range(101):
+            predictions[idx] = -dp_mat[u][test_list[idx]]
+
+        rank = np.array(predictions).argsort().argsort()[0]
+        test_user += 1
+
+        if rank < 10:
+            NDCG += 1 / np.log2(rank + 2)
+            HT += 1
+        if test_user % 100 == 0:
+            print('.', end="")
+            sys.stdout.flush()
+
+    return NDCG / test_user, HT / test_user
 
 
 # train/val/test data generation
