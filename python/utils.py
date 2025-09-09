@@ -46,7 +46,7 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
         for i in reversed(user_train[uid][:-1]):
             seq[idx] = i
             pos[idx] = nxt
-            if nxt != 0: neg[idx] = random_neq(1, itemnum + 1, ts)
+            neg[idx] = random_neq(1, itemnum + 1, ts)          # Don't need "if nxt != 0"
             nxt = i
             idx -= 1
             if idx == -1: break
@@ -112,7 +112,7 @@ def data_partition(fname):
 
     for user in User:
         nfeedback = len(User[user])
-        if nfeedback < 3:
+        if nfeedback < 4:                          # To be rigorous, the training set needs at least two data points to learn
             user_train[user] = User[user]
             user_valid[user] = []
             user_test[user] = []
