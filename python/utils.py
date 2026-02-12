@@ -128,6 +128,8 @@ def data_partition(fname):
 # evaluate on test set
 def evaluate(model, dataset, args):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
+    maxlen = args.maxlen
+    # maxlen = 50
 
     NDCG = 0.0
     HT = 0.0
@@ -141,8 +143,8 @@ def evaluate(model, dataset, args):
 
         if len(train[u]) < 1 or len(test[u]) < 1: continue
 
-        seq = np.zeros([args.maxlen], dtype=np.int32)
-        idx = args.maxlen - 1
+        seq = np.zeros([maxlen], dtype=np.int32)
+        idx = maxlen - 1
         seq[idx] = valid[u][0]
         idx -= 1
         for i in reversed(train[u]):

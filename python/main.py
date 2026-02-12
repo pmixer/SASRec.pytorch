@@ -46,9 +46,12 @@ if __name__ == '__main__':
     # num_batch = len(user_train) // args.batch_size # tail? + ((len(user_train) % args.batch_size) != 0)
     num_batch = (len(user_train) - 1) // args.batch_size + 1
     cc = 0.0
+    max_len = 0.0
     for u in user_train:
         cc += len(user_train[u])
+        max_len = max(max_len, len(user_train[u]))
     print('average sequence length: %.2f' % (cc / len(user_train)))
+    print('max sequence length: %.2f' % (max_len))
     
     f = open(os.path.join(args.dataset + '_' + args.train_dir, 'log.txt'), 'w')
     f.write('epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n')
