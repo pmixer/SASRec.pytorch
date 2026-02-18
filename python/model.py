@@ -61,6 +61,9 @@ class SASRec(torch.nn.Module):
 
             # self.pos_sigmoid = torch.nn.Sigmoid()
             # self.neg_sigmoid = torch.nn.Sigmoid()
+            
+    def get_item_embs(self, log_seqs):
+        return self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
 
     def log2feats(self, log_seqs): # TODO: fp64 and int64 as default in python, trim?
         seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))

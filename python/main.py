@@ -36,7 +36,7 @@ with open(os.path.join(args.dataset + '_' + args.train_dir, 'args.txt'), 'w') as
 f.close()
 
 if __name__ == '__main__':
-
+    print(args)
     u2i_index, i2u_index = build_index(args.dataset)
     
     # global dataset
