@@ -174,7 +174,6 @@ class FilterByDifficulty:
 
         seq = np.zeros([maxlen], dtype=np.int32)
         pos = np.zeros([maxlen], dtype=np.int32)
-        neg = np.zeros([maxlen], dtype=np.int32)
 
         nxt = sequence[-1]
         idx = maxlen - 1
@@ -183,23 +182,33 @@ class FilterByDifficulty:
         for i in reversed(sequence[:-1]):
             seq[idx] = i
             pos[idx] = nxt
-            t = np.random.randint(1, itemnum + 1)
-            while t in ts:
-                t = np.random.randint(1, itemnum + 1)
-            neg[idx] = t
             nxt = i
             idx -= 1
             if idx == -1:
                 break
 
+        all_neg_items = np.array([t for t in range(1, itemnum + 1) if t not in ts],
+                                 dtype=np.int32)  # [num_neg]
+
         with torch.no_grad():
-            pos_logits, neg_logits = self.model(
-                np.array([0]), seq[np.newaxis], pos[np.newaxis], neg[np.newaxis]
-            )
+            log_feats = self.model.log2feats(seq[np.newaxis])  # [1, maxlen, hidden]
+
+            dev = self.model.dev
+            pos_embs = self.model.item_emb(
+                torch.LongTensor(pos[np.newaxis]).to(dev)
+            )  # [1, maxlen, hidden]
+            pos_logits = (log_feats * pos_embs).sum(dim=-1)  # [1, maxlen]
+
+            neg_embs = self.model.item_emb(
+                torch.LongTensor(all_neg_items).to(dev)
+            )  # [num_neg, hidden]
+            neg_logits = log_feats[0] @ neg_embs.T  # [maxlen, num_neg]
 
         device = pos_logits.device
-        pos_loss = self.bce(pos_logits[0], torch.ones(maxlen, device=device))
-        neg_loss = self.bce(neg_logits[0], torch.zeros(maxlen, device=device))
+        pos_loss = self.bce(pos_logits[0], torch.ones(maxlen, device=device))  # [maxlen]
+        neg_loss = self.bce(
+            neg_logits, torch.zeros_like(neg_logits)
+        ).mean(dim=-1)  # [maxlen, num_neg] → [maxlen]
         per_pos_loss = (pos_loss + neg_loss).detach().cpu().numpy()
 
         difficulty = np.zeros(n)
@@ -220,6 +229,8 @@ class FilterByDifficulty:
         return difficulty
 
     def filter_easiest_k_percent(self, sequence, max_length):
+        if len(sequence) <= max_length:
+            return sequence
         difficulty = self.get_difficulty(sequence)
         threshold = np.percentile(difficulty, self.k_percent)
         mask = difficulty >= threshold
@@ -227,6 +238,8 @@ class FilterByDifficulty:
         return filtered[-max_length:]
 
     def filter_hardest_k_percent(self, sequence, max_length):
+        if len(sequence) <= max_length:
+            return sequence
         difficulty = self.get_difficulty(sequence)
         threshold = np.percentile(difficulty, 100 - self.k_percent)
         mask = difficulty <= threshold
