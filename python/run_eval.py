@@ -26,6 +26,7 @@ from filters import (
     KMeansFilteringV2,
     FastMMRFiltering,
     FilterByDifficulty,
+    uniform_random
 )
 
 
@@ -41,6 +42,8 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 
 #     # Baseline: most-recent items
 #     methods.append(("from_end", None, from_end))
+    
+    methods.append(("uniform_random", None, uniform_random))
 
 #     # K-Means: mixed unique + recent (seq-len agnostic)
 #     kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
@@ -49,6 +52,7 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 #         None,
 #         kmeans_mixed.mixed_unique_and_recent,
 #     ))
+# 
 
 #     # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
 #     for seq_len in seq_len_values:
@@ -74,20 +78,20 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 #             mmr.mmr_filtering,
 #         ))
 
-    # Difficulty-based filtering (requires model)
-    if model is not None and itemnum is not None:
-        for k_percent in [10, 20, 30]:
-            diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
-            methods.append((
-                f"difficulty_remove_easiest_{k_percent}pct",
-                None,
-                diff.filter_easiest_k_percent,
-            ))
-            methods.append((
-                f"difficulty_remove_hardest_{k_percent}pct",
-                None,
-                diff.filter_hardest_k_percent,
-            ))
+#     # Difficulty-based filtering (requires model)
+#     if model is not None and itemnum is not None:
+#         for k_percent in [10, 20, 30]:
+#             diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
+#             methods.append((
+#                 f"difficulty_remove_easiest_{k_percent}pct",
+#                 None,
+#                 diff.filter_easiest_k_percent,
+#             ))
+#             methods.append((
+#                 f"difficulty_remove_hardest_{k_percent}pct",
+#                 None,
+#                 diff.filter_hardest_k_percent,
+#             ))
 
     return methods
 

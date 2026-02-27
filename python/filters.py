@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 import torch
 from collections import defaultdict
@@ -7,6 +9,14 @@ from sklearn.preprocessing import normalize
 
 def from_end(sequence, max_length):
     return sequence[-max_length:]
+
+
+def uniform_random(sequence, max_length):
+    """Uniformly sample max_length items from sequence, preserving order."""
+    if len(sequence) <= max_length:
+        return sequence
+    indices = sorted(random.sample(range(len(sequence)), max_length))
+    return [sequence[i] for i in indices]
 
 
 class KMeansFilteringV2:
@@ -245,3 +255,31 @@ class FilterByDifficulty:
         mask = difficulty <= threshold
         filtered = [item for item, keep in zip(sequence, mask) if keep]
         return filtered[-max_length:]
+
+
+class PolicyFilter:
+    """Deterministic top-k filter backed by a trained PolicyNetwork.
+
+    At inference, selects the max_length items with the highest importance
+    weights as assigned by the policy network, restoring chronological order.
+
+    If the sequence exceeds policy_net.maxlen, only the most recent
+    policy_net.maxlen items are visible to the policy (known limitation).
+
+    Usage matches the filter_function(sequence, max_length) interface used
+    throughout the codebase.
+    """
+
+    def __init__(self, policy_net):
+        self.policy_net = policy_net
+
+    def filter(self, sequence, max_length, user_id=0):
+        if len(sequence) <= max_length:
+            return sequence
+        with torch.no_grad():
+            log_probs = self.policy_net.get_log_probs(sequence, user_id=user_id)  # [min(L, maxlen)]
+        k = min(max_length, log_probs.shape[0])
+        top_indices = log_probs.topk(k).indices.sort().values
+        # Map indices back to original sequence positions (accounts for truncation)
+        offset = max(0, len(sequence) - self.policy_net.maxlen)
+        return [sequence[offset + i.item()] for i in top_indices]
