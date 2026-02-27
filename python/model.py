@@ -63,15 +63,16 @@ class SASRec(torch.nn.Module):
             # self.neg_sigmoid = torch.nn.Sigmoid()
             
     def get_item_embs(self, log_seqs):
-        return self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        return self.item_emb(torch.tensor(log_seqs, dtype=torch.long, device=self.dev))
 
     def log2feats(self, log_seqs, causal=True): # TODO: fp64 and int64 as default in python, trim?
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        log_seqs_t = torch.tensor(log_seqs, dtype=torch.long, device=self.dev)
+        seqs = self.item_emb(log_seqs_t)
         seqs *= self.item_emb.embedding_dim ** 0.5
-        poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
-        # TODO: directly do tensor = torch.arange(1, xxx, device='cuda') to save extra overheads
-        poss *= (log_seqs != 0)
-        seqs += self.pos_emb(torch.LongTensor(poss).to(self.dev))
+        B, L = log_seqs.shape
+        poss = torch.arange(1, L + 1, dtype=torch.long, device=self.dev).unsqueeze(0).expand(B, -1)
+        poss = poss * (log_seqs_t != 0)
+        seqs += self.pos_emb(poss)
         seqs = self.emb_dropout(seqs)
 
         tl = seqs.shape[1] # time dim len for enforce causality
@@ -103,8 +104,8 @@ class SASRec(torch.nn.Module):
     def forward(self, user_ids, log_seqs, pos_seqs, neg_seqs): # for training        
         log_feats = self.log2feats(log_seqs) # user_ids hasn't been used yet
 
-        pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
-        neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
+        pos_embs = self.item_emb(torch.tensor(pos_seqs, dtype=torch.long, device=self.dev))
+        neg_embs = self.item_emb(torch.tensor(neg_seqs, dtype=torch.long, device=self.dev))
 
         pos_logits = (log_feats * pos_embs).sum(dim=-1)
         neg_logits = (log_feats * neg_embs).sum(dim=-1)
@@ -119,7 +120,7 @@ class SASRec(torch.nn.Module):
 
         final_feat = log_feats[:, -1, :] # only use last QKV classifier, a waste
 
-        item_embs = self.item_emb(torch.LongTensor(item_indices).to(self.dev)) # (U, I, C)
+        item_embs = self.item_emb(torch.tensor(item_indices, dtype=torch.long, device=self.dev)) # (I, C)
 
         logits = item_embs.matmul(final_feat.unsqueeze(-1)).squeeze(-1)
 
@@ -189,13 +190,15 @@ class PolicyNetwork(torch.nn.Module):
         self.out_proj = torch.nn.Linear(args.hidden_units, 1)
 
     def log2feats(self, log_seqs, user_ids=None):
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        log_seqs_t = torch.tensor(log_seqs, dtype=torch.long, device=self.dev)
+        seqs = self.item_emb(log_seqs_t)
         seqs *= self.item_emb.embedding_dim ** 0.5
-        poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
-        poss *= (log_seqs != 0)
-        seqs += self.pos_emb(torch.LongTensor(poss).to(self.dev))
+        B, L = log_seqs.shape
+        poss = torch.arange(1, L + 1, dtype=torch.long, device=self.dev).unsqueeze(0).expand(B, -1)
+        poss = poss * (log_seqs_t != 0)
+        seqs += self.pos_emb(poss)
         if user_ids is not None and self.user_emb is not None:
-            u_emb = self.user_emb(torch.LongTensor(user_ids).to(self.dev))  # [B, hidden]
+            u_emb = self.user_emb(torch.tensor(user_ids, dtype=torch.long, device=self.dev))  # [B, hidden]
             seqs = seqs + u_emb.unsqueeze(1)  # broadcast over sequence positions
         seqs = self.emb_dropout(seqs)
 

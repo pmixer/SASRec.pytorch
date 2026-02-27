@@ -178,30 +178,56 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
         offset = max(0, len(seq) - args.policy_maxlen)
 
         # ------------------------------------------------------------------
-        # Collect num_samples rollouts via multinomial sampling
+        # Sample negatives once per user (reused across all rollouts)
         # ------------------------------------------------------------------
-        sample_log_probs = []
-        sample_rewards = []
+        rated_set = rated | {0}
+        item_idx = [valid_item]
+        while len(item_idx) <= 100:
+            t = np.random.randint(1, itemnum + 1)
+            if t not in rated_set:
+                item_idx.append(t)
 
-        for i in range(args.num_samples):
-            selected = torch.multinomial(probs, args.max_length, replacement=False)
-            selected = selected.sort().values                          # chronological order
-            log_prob = log_probs_all[selected].sum()                   # scalar; has grad
-            filtered = [seq[offset + i.item()] for i in selected]
-            reward = compute_reward(
-                sasrec_model, u, filtered, valid_item, rated, itemnum, args.max_length,
-                reward_type=args.reward,
-            )
-            sample_log_probs.append(log_prob)
-            sample_rewards.append(reward)
-            total_ndcg += reward
-            num_valid += 1
+        # ------------------------------------------------------------------
+        # Collect num_samples rollouts — fully batched
+        # ------------------------------------------------------------------
+        # [num_samples, max_length] — all rollout item selections at once
+        all_selected = torch.multinomial(
+            probs.unsqueeze(0).expand(args.num_samples, -1),
+            args.max_length, replacement=False,
+        )
+        all_selected, _ = all_selected.sort(dim=1)   # chronological order
+
+        # [num_samples] — sum of selected log-probs for each rollout (differentiable)
+        sample_log_probs_tensor = log_probs_all[all_selected].sum(dim=1)
+
+        # Build batched SASRec input sequences
+        seq_window_arr = np.array(seq[offset:], dtype=np.int32)   # [L_window]
+        selected_np = all_selected.cpu().numpy()                   # [num_samples, max_length]
+        batch_seqs = seq_window_arr[selected_np]                   # [num_samples, max_length]
+
+        # Single batched SASRec forward pass
+        with torch.no_grad():
+            batch_preds = -sasrec_model.predict(
+                np.array([u] * args.num_samples),
+                batch_seqs,
+                item_idx,
+            )  # [num_samples, 101]
+
+        # Compute rewards from batch predictions
+        ranks = batch_preds.argsort(dim=1).argsort(dim=1)[:, 0]   # [num_samples]
+
+        if args.reward == 'reciprocal_rank':
+            rewards_tensor = 1.0 / (ranks.float() + 1)
+        else:  # ndcg10
+            rewards_tensor = 1.0 / torch.log2(ranks.float() + 2)
+
+        total_ndcg += rewards_tensor.sum().item()
+        num_valid += args.num_samples
 
         # ------------------------------------------------------------------
         # REINFORCE loss: -E[advantage * log_prob]
         # ------------------------------------------------------------------
-        rewards_arr = np.array(sample_rewards)
-        rewards_tensor = torch.tensor(sample_rewards, dtype=torch.float32)
+        rewards_arr = rewards_tensor.cpu().numpy()
 
         if args.baseline == 'rloo':
             # Leave-One-Out baseline: per-sample baseline is mean of all other samples.
@@ -229,7 +255,7 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
             )
         if advantages.std() > 1e-8:
             advantages = advantages / (advantages.std() + 1e-8)
-        loss = -(advantages * torch.stack(sample_log_probs)).mean() - args.entropy_coef * entropy
+        loss = -(advantages * sample_log_probs_tensor).mean() - args.entropy_coef * entropy
         (loss / args.gradient_accumulation_steps).backward()
 
         accumulated += 1
