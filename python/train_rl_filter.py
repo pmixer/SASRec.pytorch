@@ -23,17 +23,16 @@ python3 train_rl_filter.py \
 --save_dir rl_policy_ml1m \
 --max_length 50 \
 --num_epochs 200 \
---num_samples 100 \
+--num_samples 32 \
 --dropout_rate 0.2 \
 --baseline rloo \
 --grad_clip 1.0 \
---gradient_accumulation_steps 1 \
---device cpu \
+--gradient_accumulation_steps 16 \
+--device cuda \
 --entropy_coef 0.0 \
 --seed 42 \
 --reward ndcg10 \
---user_start_idx 0 \
---user_end_idx 3
+--user_start_idx 0
 """
 
 import os
@@ -330,7 +329,7 @@ def evaluate_greedy(policy_net, sasrec_model, dataset, args):
             sasrec_model, u, filtered_seq, valid_item, rated, itemnum, args.max_length,
             reward_type='ndcg10',  # always evaluate with NDCG@10 regardless of training reward
         )
-        print(f"  greedy  u={u:5d}  ndcg={ndcg:.4f}")
+#         print(f"  greedy  u={u:5d}  ndcg={ndcg:.4f}")
         total_ndcg += ndcg
         num_valid += 1
 
@@ -341,13 +340,13 @@ def evaluate_greedy(policy_net, sasrec_model, dataset, args):
 # Test evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate_test(policy_net, sasrec_model, dataset, args):
-    """Evaluate the policy on the test split using deterministic top-k selection.
+def evaluate_test(filter_fn, sasrec_model, dataset, args):
+    """Evaluate a filter on the test split using deterministic top-k selection.
 
     History = train[u] + [valid[u][0]]; target = test[u][0].
 
     Args:
-        policy_net:   PolicyNetwork (will be set to eval mode internally).
+        filter_fn:    Callable(sequence, max_length, user_id) -> filtered list.
         sasrec_model: Frozen SASRec reward model.
         dataset:      Output of data_partition().
         args:         Parsed arguments.
@@ -356,9 +355,6 @@ def evaluate_test(policy_net, sasrec_model, dataset, args):
         Mean test NDCG@10 (float).
     """
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
-
-    policy_net.eval()
-    pf = PolicyFilter(policy_net)
 
     if usernum > 10000:
         users = random.sample(range(1, usernum + 1), 10000)
@@ -379,12 +375,12 @@ def evaluate_test(policy_net, sasrec_model, dataset, args):
         test_item = user_test[u][0]
         rated = set(user_train[u]) | {user_valid[u][0]}
 
-        filtered_seq = pf.filter(history, args.max_length, user_id=u)
+        filtered_seq = filter_fn(history, args.max_length, u)
         ndcg = compute_reward(
             sasrec_model, u, filtered_seq, test_item, rated, itemnum, args.max_length,
             reward_type='ndcg10',
         )
-        print(f"  test  u={u:5d}  ndcg={ndcg:.4f}")
+#         print(f"  test  u={u:5d}  ndcg={ndcg:.4f}")
         total_ndcg += ndcg
         num_valid += 1
 
@@ -482,6 +478,7 @@ def main():
     wandb.define_metric("train/mean_reward", step_metric="epoch")
     wandb.define_metric("eval/greedy_ndcg", step_metric="epoch")
     wandb.define_metric("test/ndcg", step_metric="epoch")
+    wandb.define_metric("test/ndcg_from_end", step_metric="epoch")
 
     if args.max_length > args.sasrec_maxlen:
         print(
@@ -551,6 +548,11 @@ def main():
             except Exception:
                 pass  # skip 1-D tensors (biases, layernorm weights)
 
+    # Zero-init out_proj so that at initialisation logits are driven entirely
+    # by position_bias (cumsum), making the untrained policy equivalent to from_end.
+    torch.nn.init.zeros_(policy_net.out_proj.weight)
+    torch.nn.init.zeros_(policy_net.out_proj.bias)
+
     # ------------------------------------------------------------------
     # 6. Adam optimizer over trainable parameters only
     # ------------------------------------------------------------------
@@ -575,6 +577,7 @@ def main():
     # ------------------------------------------------------------------
     # 8. Epoch loop
     # ------------------------------------------------------------------
+    epoch = 0
     for epoch in range(1, args.num_epochs + 1):
         policy_net.train()
         mean_ndcg = train_epoch(
@@ -615,9 +618,26 @@ def main():
                 break
             policy_net.train()
 
-    test_ndcg = evaluate_test(policy_net, sasrec_model, dataset, args)
-    print(f"Test NDCG@10 = {test_ndcg:.4f}")
+        if epoch % 1 == 0:
+            policy_net.eval()
+            pf = PolicyFilter(policy_net)
+            test_ndcg = evaluate_test(lambda seq, ml, u: pf.filter(seq, ml, user_id=u),
+                                      sasrec_model, dataset, args)
+            print(f"Epoch {epoch:3d} | test NDCG@10 = {test_ndcg:.4f}")
+            run.log({"test/ndcg": test_ndcg, "epoch": epoch})
+            policy_net.train()
+
+    policy_net.eval()
+    pf = PolicyFilter(policy_net)
+    test_ndcg = evaluate_test(lambda seq, ml, u: pf.filter(seq, ml, user_id=u),
+                               sasrec_model, dataset, args)
+    print(f"Test NDCG@10 (policy) = {test_ndcg:.4f}")
     run.log({"test/ndcg": test_ndcg, "epoch": epoch})
+
+    from_end_ndcg = evaluate_test(lambda seq, ml, u: from_end(seq, ml),
+                                   sasrec_model, dataset, args)
+    print(f"Test NDCG@10 (from_end) = {from_end_ndcg:.4f}")
+    run.log({"test/ndcg_from_end": from_end_ndcg, "epoch": epoch})
 
     run.finish()
 

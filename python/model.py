@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 
+
 class PointWiseFeedForward(torch.nn.Module):
     def __init__(self, hidden_units, dropout_rate):
 
@@ -152,6 +153,7 @@ class PolicyNetwork(torch.nn.Module):
         self.norm_first = args.norm_first
         self.causal = getattr(args, 'causal', False)
         self.maxlen = args.maxlen  # = policy_maxlen
+        self.position_bias = torch.nn.Parameter(torch.ones(self.maxlen,) * 0.01, requires_grad=True)
 
         self.item_emb = torch.nn.Embedding(item_num + 1, args.hidden_units, padding_idx=0)
         self.pos_emb = torch.nn.Embedding(args.maxlen + 1, args.hidden_units, padding_idx=0)
@@ -248,4 +250,6 @@ class PolicyNetwork(torch.nn.Module):
         user_ids = np.array([user_id], dtype=np.int32)                  # [1]
         feats = self.log2feats(log_seq, user_ids)                       # [1, L, hidden]
         logits = self.out_proj(feats[0]).squeeze(-1)                    # [L]
+#         import pdb; pdb.set_trace()
+        logits += torch.cumsum(self.position_bias[-logits.shape[0]:], dim=0)
         return torch.nn.functional.log_softmax(logits, dim=0)          # [L]
