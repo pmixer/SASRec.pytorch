@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 from model import SASRec
-from utils import data_partition, evaluate_valid_with_filter
+from utils import data_partition, evaluate_valid_with_filter, evaluate_test_split_with_filter
 from filters import (
     from_end,
     KMeansFilteringV2,
@@ -40,10 +40,10 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
     """
     methods = []
 
-#     # Baseline: most-recent items
-#     methods.append(("from_end", None, from_end))
+    # Baseline: most-recent items
+    methods.append(("from_end", None, from_end))
     
-    methods.append(("uniform_random", None, uniform_random))
+#     methods.append(("uniform_random", None, uniform_random))
 
 #     # K-Means: mixed unique + recent (seq-len agnostic)
 #     kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
@@ -69,14 +69,14 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 #                 kmf.bounded_cluster_filtering,
 #             ))
 
-#     # MMR filtering (seq-len agnostic)
-#     for lambda_recency in [0.5, 0.7, 0.9]:
-#         mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
-#         methods.append((
-#             f"mmr_lambda{lambda_recency}",
-#             None,
-#             mmr.mmr_filtering,
-#         ))
+    # MMR filtering (seq-len agnostic)
+    for lambda_recency in [0.7]:
+        mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
+        methods.append((
+            f"mmr_lambda{lambda_recency}",
+            None,
+            mmr.mmr_filtering,
+        ))
 
 #     # Difficulty-based filtering (requires model)
 #     if model is not None and itemnum is not None:
@@ -96,7 +96,7 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
     return methods
 
 
-def run_evaluation(model, dataset, seq_len_values, num_repeats, methods):
+def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, args):
     ndcg_results = {k: defaultdict(list) for k in seq_len_values}
     hr_results = {k: defaultdict(list) for k in seq_len_values}
 
@@ -111,10 +111,11 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods):
                     f"  seq_len={seq_len}  method={name}  repeat={repeat + 1}/{num_repeats}",
                     flush=True,
                 )
-                ndcg, hr = evaluate_valid_with_filter(
+                eval_fn = evaluate_valid_with_filter if split == "valid" else evaluate_test_split_with_filter
+                ndcg, hr = eval_fn(
                     model, dataset,
-                    None,           # args (unused inside the function)
-                    seq_len,        # history_len
+                    None,       # args (unused inside the function)
+                    seq_len,    # history_len
                     filter_function=fn,
                     verbose=True,
                 )
@@ -139,6 +140,7 @@ def main():
     parser.add_argument('--dropout_rate', type=float, default=0.2)
     parser.add_argument('--maxlen', type=int, default=200)
     parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--split', type=str, default='valid')
     args = parser.parse_args()
 
     # ------------------------------------------------------------------ dataset
@@ -173,7 +175,7 @@ def main():
     # ------------------------------------------------------------------ evaluate
     print("Starting evaluation ...", flush=True)
     ndcg_results, hr_results = run_evaluation(
-        model, dataset, args.seq_len_values, args.num_repeats, methods
+        model, dataset, args.seq_len_values, args.num_repeats, methods, args.split, args
     )
 
     # ------------------------------------------------------------------ save

@@ -31,11 +31,14 @@ class SASRec(torch.nn.Module):
         self.item_num = item_num
         self.dev = args.device
         self.norm_first = args.norm_first
+        
+#         maxlen = args.maxlen
+        maxlen = 200
 
         # TODO: loss += args.l2_emb for regularizing embedding vectors during training
         # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
         self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
-        self.pos_emb = torch.nn.Embedding(args.maxlen+1, args.hidden_units, padding_idx=0)
+        self.pos_emb = torch.nn.Embedding(maxlen+1, args.hidden_units, padding_idx=0)
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
         self.attention_layernorms = torch.nn.ModuleList() # to be Q for self-attention
@@ -151,9 +154,10 @@ class PolicyNetwork(torch.nn.Module):
         self.item_num = item_num
         self.dev = args.device
         self.norm_first = args.norm_first
-        self.causal = getattr(args, 'causal', False)
+        self.attention = getattr(args, 'attention', 'full')
         self.maxlen = args.maxlen  # = policy_maxlen
-        self.position_bias = torch.nn.Parameter(torch.ones(self.maxlen,) * 0.01, requires_grad=True)
+#         self.position_bias = torch.nn.Parameter(torch.ones(self.maxlen,) * 0.01, requires_grad=True)
+        self.position_bias = torch.nn.Parameter(torch.arange(self.maxlen,) * 0.01, requires_grad=True)
 
         self.item_emb = torch.nn.Embedding(item_num + 1, args.hidden_units, padding_idx=0)
         self.pos_emb = torch.nn.Embedding(args.maxlen + 1, args.hidden_units, padding_idx=0)
@@ -205,8 +209,10 @@ class PolicyNetwork(torch.nn.Module):
         seqs = self.emb_dropout(seqs)
 
         tl = seqs.shape[1]
-        if self.causal:
+        if self.attention == 'left':
             attention_mask = ~torch.tril(torch.ones((tl, tl), dtype=torch.bool, device=self.dev))
+        elif self.attention == 'right':
+            attention_mask = ~torch.triu(torch.ones((tl, tl), dtype=torch.bool, device=self.dev))
         else:
             attention_mask = None
 
@@ -251,5 +257,6 @@ class PolicyNetwork(torch.nn.Module):
         feats = self.log2feats(log_seq, user_ids)                       # [1, L, hidden]
         logits = self.out_proj(feats[0]).squeeze(-1)                    # [L]
 #         import pdb; pdb.set_trace()
-        logits += torch.cumsum(self.position_bias[-logits.shape[0]:], dim=0)
+#         logits += torch.cumsum(self.position_bias[-logits.shape[0]:], dim=0)
+        logits += self.position_bias[-logits.shape[0]:]
         return torch.nn.functional.log_softmax(logits, dim=0)          # [L]
