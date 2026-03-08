@@ -185,7 +185,8 @@ def evaluate_valid(model, dataset, args):
     valid_user = 0.0
     HT = 0.0
     if usernum>10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+#         users = random.sample(range(1, usernum + 1), 10000)
+        users = range(1, 10000)
     else:
         users = range(1, usernum + 1)
     for u in users:
@@ -223,16 +224,13 @@ def evaluate_valid(model, dataset, args):
     return NDCG / valid_user, HT / valid_user
 
 
-def evaluate_valid_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True):
+def evaluate_valid_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
     NDCG = 0.0
     valid_user = 0.0
     HT = 0.0
-    if usernum>10000:
-        users = random.sample(range(1, usernum + 1), 10000)
-    else:
-        users = range(1, usernum + 1)
+    users = list(range(1, usernum + 1))[user_start_idx:user_end_idx]
     for u in users:
         if len(train[u]) < 1 or len(valid[u]) < 1: continue
 
@@ -269,7 +267,7 @@ def evaluate_valid_with_filter(model, dataset, args, history_len, filter_functio
     return NDCG / valid_user, HT / valid_user
 
 
-def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True):
+def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None):
     """Mirror of evaluate_valid_with_filter but targets the test split.
 
     History = train[u] + [valid[u][0]]; target = test[u][0].
@@ -279,10 +277,7 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
     NDCG = 0.0
     valid_user = 0.0
     HT = 0.0
-    if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
-    else:
-        users = range(1, usernum + 1)
+    users = list(range(1, usernum + 1))[user_start_idx:user_end_idx]
     for u in users:
         if len(train[u]) < 1 or len(valid[u]) < 1 or len(test[u]) < 1:
             continue

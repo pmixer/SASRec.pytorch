@@ -121,11 +121,7 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
     """
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
 
-    if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
-    else:
-        users = list(range(1, usernum + 1))
-#     random.shuffle(users)
+    users = list(range(1, usernum + 1))
 
     total_ndcg = 0.0
     num_valid = 0
@@ -298,10 +294,7 @@ def evaluate_greedy(policy_net, sasrec_model, dataset, args):
     policy_net.eval()
     pf = PolicyFilter(policy_net)
 
-    if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
-    else:
-        users = list(range(1, usernum + 1))
+    users = list(range(1, usernum + 1))
 
     total_ndcg = 0.0
     num_valid = 0
@@ -348,10 +341,7 @@ def evaluate_test_with_filter(filter_fn, sasrec_model, dataset, args):
     """
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
 
-    if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
-    else:
-        users = list(range(1, usernum + 1))
+    users = list(range(1, usernum + 1))
 
     total_ndcg = 0.0
     num_valid = 0

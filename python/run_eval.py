@@ -7,6 +7,13 @@ python3 run_eval.py \
         --state_dict_path ml-1m_default/SASRec.epoch=920.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
         --seq_len_values 50 100 200 \
         --num_repeats 3
+        
+        
+python3 run_eval.py \
+        --dataset Electronics \
+        --state_dict_path Electronics_default/SASRec.epoch=20.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
+        --seq_len_values 50 100 200 \
+        --num_repeats 3
 """
 
 import os
@@ -43,31 +50,31 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
     # Baseline: most-recent items
     methods.append(("from_end", None, from_end))
     
-#     methods.append(("uniform_random", None, uniform_random))
+    methods.append(("uniform_random", None, uniform_random))
 
-#     # K-Means: mixed unique + recent (seq-len agnostic)
-#     kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
-#     methods.append((
-#         f"kmeans_{num_clusters}_mixed_unique_and_recent",
-#         None,
-#         kmeans_mixed.mixed_unique_and_recent,
-#     ))
-# 
+    # K-Means: mixed unique + recent (seq-len agnostic)
+    kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
+    methods.append((
+        f"kmeans_{num_clusters}_mixed_unique_and_recent",
+        None,
+        kmeans_mixed.mixed_unique_and_recent,
+    ))
 
-#     # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
-#     for seq_len in seq_len_values:
-#         for multiplier in [1, 2, 4]:
-#             max_per_cluster = int(multiplier * math.sqrt(seq_len))
-#             kmf = KMeansFilteringV2(
-#                 item_embeddings,
-#                 n_clusters=num_clusters,
-#                 max_per_cluster=max_per_cluster,
-#             )
-#             methods.append((
-#                 f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
-#                 seq_len,
-#                 kmf.bounded_cluster_filtering,
-#             ))
+
+    # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
+    for seq_len in seq_len_values:
+        for multiplier in [1, 2, 4]:
+            max_per_cluster = int(multiplier * math.sqrt(seq_len))
+            kmf = KMeansFilteringV2(
+                item_embeddings,
+                n_clusters=num_clusters,
+                max_per_cluster=max_per_cluster,
+            )
+            methods.append((
+                f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
+                seq_len,
+                kmf.bounded_cluster_filtering,
+            ))
 
     # MMR filtering (seq-len agnostic)
     for lambda_recency in [0.7]:
@@ -78,20 +85,20 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
             mmr.mmr_filtering,
         ))
 
-#     # Difficulty-based filtering (requires model)
-#     if model is not None and itemnum is not None:
-#         for k_percent in [10, 20, 30]:
-#             diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
-#             methods.append((
-#                 f"difficulty_remove_easiest_{k_percent}pct",
-#                 None,
-#                 diff.filter_easiest_k_percent,
-#             ))
-#             methods.append((
-#                 f"difficulty_remove_hardest_{k_percent}pct",
-#                 None,
-#                 diff.filter_hardest_k_percent,
-#             ))
+    # Difficulty-based filtering (requires model)
+    if model is not None and itemnum is not None:
+        for k_percent in [10, 20, 30]:
+            diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
+            methods.append((
+                f"difficulty_remove_easiest_{k_percent}pct",
+                None,
+                diff.filter_easiest_k_percent,
+            ))
+            methods.append((
+                f"difficulty_remove_hardest_{k_percent}pct",
+                None,
+                diff.filter_hardest_k_percent,
+            ))
 
     return methods
 
@@ -118,6 +125,8 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                     seq_len,    # history_len
                     filter_function=fn,
                     verbose=True,
+                    user_start_idx=args.user_start_idx,
+                    user_end_idx=args.user_end_idx,
                 )
                 ndcg_results[seq_len][name].append(ndcg)
                 hr_results[seq_len][name].append(hr)
@@ -141,6 +150,10 @@ def main():
     parser.add_argument('--maxlen', type=int, default=200)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--split', type=str, default='valid')
+    parser.add_argument('--user_start_idx', type=int, default=0,
+                        help='Start index into the sorted user list (inclusive, default: 0)')
+    parser.add_argument('--user_end_idx', type=int, default=None,
+                        help='End index into the sorted user list (exclusive, default: all users)')
     args = parser.parse_args()
 
     # ------------------------------------------------------------------ dataset
