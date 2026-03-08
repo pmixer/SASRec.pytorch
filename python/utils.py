@@ -177,7 +177,7 @@ def evaluate(model, dataset, args):
     return NDCG / valid_user, HT / valid_user
 
 
-# evaluate on val set
+# DON'T USE
 def evaluate_valid(model, dataset, args):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
@@ -230,11 +230,15 @@ def evaluate_valid_with_filter(model, dataset, args, history_len, filter_functio
     NDCG = 0.0
     valid_user = 0.0
     HT = 0.0
+    NDCG_long = 0.0
+    valid_user_long = 0.0
+    HT_long = 0.0
     users = list(range(1, usernum + 1))[user_start_idx:user_end_idx]
     for u in users:
         if len(train[u]) < 1 or len(valid[u]) < 1: continue
 
-        history = filter_function(train[u], history_len)
+        is_long = len(train[u]) > history_len
+        history = filter_function(train[u], history_len) if is_long else train[u]
         seq = np.zeros([history_len], dtype=np.int32)
         idx = history_len - 1
         for i in reversed(history):
@@ -256,15 +260,25 @@ def evaluate_valid_with_filter(model, dataset, args, history_len, filter_functio
         rank = predictions.argsort().argsort()[0].item()
 
         valid_user += 1
+        if is_long:
+            valid_user_long += 1
 
         if rank < 10:
             NDCG += 1 / np.log2(rank + 2)
             HT += 1
+            if is_long:
+                NDCG_long += 1 / np.log2(rank + 2)
+                HT_long += 1
         if valid_user % 100 == 0 and verbose:
             print('.', end="")
             sys.stdout.flush()
 
-    return NDCG / valid_user, HT / valid_user
+    return (
+        NDCG / valid_user,
+        HT / valid_user,
+        NDCG_long / valid_user_long if valid_user_long > 0 else 0.0,
+        HT_long / valid_user_long if valid_user_long > 0 else 0.0,
+    )
 
 
 def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None):
@@ -277,13 +291,17 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
     NDCG = 0.0
     valid_user = 0.0
     HT = 0.0
+    NDCG_long = 0.0
+    valid_user_long = 0.0
+    HT_long = 0.0
     users = list(range(1, usernum + 1))[user_start_idx:user_end_idx]
     for u in users:
         if len(train[u]) < 1 or len(valid[u]) < 1 or len(test[u]) < 1:
             continue
 
-        history = train[u] + [valid[u][0]]
-        history = filter_function(history, history_len)
+        history_full = train[u] + [valid[u][0]]
+        is_long = len(history_full) > history_len
+        history = filter_function(history_full, history_len) if is_long else history_full
         seq = np.zeros([history_len], dtype=np.int32)
         idx = history_len - 1
         for i in reversed(history):
@@ -307,14 +325,24 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
         rank = predictions.argsort().argsort()[0].item()
 
         valid_user += 1
+        if is_long:
+            valid_user_long += 1
 
         if rank < 10:
             NDCG += 1 / np.log2(rank + 2)
             HT += 1
+            if is_long:
+                NDCG_long += 1 / np.log2(rank + 2)
+                HT_long += 1
         if valid_user % 100 == 0 and verbose:
             print('.', end="")
             sys.stdout.flush()
 
-    return NDCG / valid_user, HT / valid_user
+    return (
+        NDCG / valid_user,
+        HT / valid_user,
+        NDCG_long / valid_user_long if valid_user_long > 0 else 0.0,
+        HT_long / valid_user_long if valid_user_long > 0 else 0.0,
+    )
 
 

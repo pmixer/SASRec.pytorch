@@ -26,18 +26,19 @@ from datetime import datetime
 import numpy as np
 import torch
 
-from model import SASRec
+from model import SASRec, PolicyNetwork
 from utils import data_partition, evaluate_valid_with_filter, evaluate_test_split_with_filter
 from filters import (
     from_end,
     KMeansFilteringV2,
     FastMMRFiltering,
     FilterByDifficulty,
-    uniform_random
+    uniform_random,
+    PolicyFilter,
 )
 
 
-def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None, itemnum=None):
+def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None, itemnum=None, policy_net=None):
     """
     Returns a list of (name, seq_len_or_None, filter_fn) triples.
 
@@ -50,62 +51,69 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
     # Baseline: most-recent items
     methods.append(("from_end", None, from_end))
     
-    methods.append(("uniform_random", None, uniform_random))
+#     methods.append(("uniform_random", None, uniform_random))
 
-    # K-Means: mixed unique + recent (seq-len agnostic)
-    kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
-    methods.append((
-        f"kmeans_{num_clusters}_mixed_unique_and_recent",
-        None,
-        kmeans_mixed.mixed_unique_and_recent,
-    ))
+#     # K-Means: mixed unique + recent (seq-len agnostic)
+#     kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
+#     methods.append((
+#         f"kmeans_{num_clusters}_mixed_unique_and_recent",
+#         None,
+#         kmeans_mixed.mixed_unique_and_recent,
+#     ))
 
 
-    # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
-    for seq_len in seq_len_values:
-        for multiplier in [1, 2, 4]:
-            max_per_cluster = int(multiplier * math.sqrt(seq_len))
-            kmf = KMeansFilteringV2(
-                item_embeddings,
-                n_clusters=num_clusters,
-                max_per_cluster=max_per_cluster,
-            )
-            methods.append((
-                f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
-                seq_len,
-                kmf.bounded_cluster_filtering,
-            ))
+#     # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
+#     for seq_len in seq_len_values:
+#         for multiplier in [1, 2, 4]:
+#             max_per_cluster = int(multiplier * math.sqrt(seq_len))
+#             kmf = KMeansFilteringV2(
+#                 item_embeddings,
+#                 n_clusters=num_clusters,
+#                 max_per_cluster=max_per_cluster,
+#             )
+#             methods.append((
+#                 f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
+#                 seq_len,
+#                 kmf.bounded_cluster_filtering,
+#             ))
 
-    # MMR filtering (seq-len agnostic)
-    for lambda_recency in [0.7]:
-        mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
-        methods.append((
-            f"mmr_lambda{lambda_recency}",
-            None,
-            mmr.mmr_filtering,
-        ))
+#     # MMR filtering (seq-len agnostic)
+#     for lambda_recency in [0.7]:
+#         mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
+#         methods.append((
+#             f"mmr_lambda{lambda_recency}",
+#             None,
+#             mmr.mmr_filtering,
+#         ))
 
-    # Difficulty-based filtering (requires model)
-    if model is not None and itemnum is not None:
-        for k_percent in [10, 20, 30]:
-            diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
-            methods.append((
-                f"difficulty_remove_easiest_{k_percent}pct",
-                None,
-                diff.filter_easiest_k_percent,
-            ))
-            methods.append((
-                f"difficulty_remove_hardest_{k_percent}pct",
-                None,
-                diff.filter_hardest_k_percent,
-            ))
+#     # Difficulty-based filtering (requires model)
+#     if model is not None and itemnum is not None:
+#         for k_percent in [10, 20, 30]:
+#             diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
+#             methods.append((
+#                 f"difficulty_remove_easiest_{k_percent}pct",
+#                 None,
+#                 diff.filter_easiest_k_percent,
+#             ))
+#             methods.append((
+#                 f"difficulty_remove_hardest_{k_percent}pct",
+#                 None,
+#                 diff.filter_hardest_k_percent,
+#             ))
+
+    # RL policy filter
+    if policy_net is not None:
+        pf = PolicyFilter(policy_net)
+        methods.append(("rl_policy", None, lambda seq, ml: pf.filter(seq, ml)))
 
     return methods
 
 
 def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, args):
-    ndcg_results = {k: defaultdict(list) for k in seq_len_values}
-    hr_results = {k: defaultdict(list) for k in seq_len_values}
+    ndcg_results      = {k: defaultdict(list) for k in seq_len_values}
+    hr_results        = {k: defaultdict(list) for k in seq_len_values}
+    ndcg_long_results = {k: defaultdict(list) for k in seq_len_values}
+    hr_long_results   = {k: defaultdict(list) for k in seq_len_values}
 
     for seq_len in seq_len_values:
         for name, method_seq_len, fn in methods:
@@ -119,7 +127,7 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                     flush=True,
                 )
                 eval_fn = evaluate_valid_with_filter if split == "valid" else evaluate_test_split_with_filter
-                ndcg, hr = eval_fn(
+                ndcg, hr, ndcg_long, hr_long = eval_fn(
                     model, dataset,
                     None,       # args (unused inside the function)
                     seq_len,    # history_len
@@ -130,9 +138,15 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                 )
                 ndcg_results[seq_len][name].append(ndcg)
                 hr_results[seq_len][name].append(hr)
-                print(f"    NDCG@10={ndcg:.4f}  HR@10={hr:.4f}", flush=True)
+                ndcg_long_results[seq_len][name].append(ndcg_long)
+                hr_long_results[seq_len][name].append(hr_long)
+                print(
+                    f"    NDCG@10={ndcg:.4f}  HR@10={hr:.4f}"
+                    f"  NDCG@10(long)={ndcg_long:.4f}  HR@10(long)={hr_long:.4f}",
+                    flush=True,
+                )
 
-    return ndcg_results, hr_results
+    return ndcg_results, hr_results, ndcg_long_results, hr_long_results
 
 
 def main():
@@ -150,6 +164,8 @@ def main():
     parser.add_argument('--maxlen', type=int, default=200)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--split', type=str, default='valid')
+    parser.add_argument('--policy_path', type=str, default=None,
+                        help='Path to a trained PolicyNetwork checkpoint (.pth) from train_rl_filter.py')
     parser.add_argument('--user_start_idx', type=int, default=0,
                         help='Start index into the sorted user list (inclusive, default: 0)')
     parser.add_argument('--user_end_idx', type=int, default=None,
@@ -182,12 +198,33 @@ def main():
 
     # ------------------------------------------------------------------ filters
     item_embeddings = model.item_emb.weight.data.numpy()
+
+    policy_net = None
+    if args.policy_path is not None:
+        print(f"Loading RL policy from '{args.policy_path}' ...", flush=True)
+        ckpt = torch.load(args.policy_path, map_location=torch.device(args.device))
+        policy_saved_args = argparse.Namespace(**ckpt['args'])
+        policy_args = argparse.Namespace(
+            hidden_units=policy_saved_args.hidden_units,
+            num_blocks=policy_saved_args.num_blocks,
+            num_heads=policy_saved_args.num_heads,
+            maxlen=policy_saved_args.policy_maxlen,
+            dropout_rate=policy_saved_args.dropout_rate,
+            device=args.device,
+            norm_first=policy_saved_args.norm_first,
+            attention=policy_saved_args.attention,
+        )
+        user_num = usernum if policy_saved_args.user_emb else 0
+        policy_net = PolicyNetwork(user_num, itemnum, policy_args).to(args.device)
+        policy_net.load_state_dict(ckpt['policy_net_state_dict'])
+        policy_net.eval()
+
     print("Building filter methods (K-Means fitting may take a moment) ...", flush=True)
-    methods = build_methods(item_embeddings, args.seq_len_values, num_clusters=args.num_clusters, model=model, itemnum=itemnum)
+    methods = build_methods(item_embeddings, args.seq_len_values, num_clusters=args.num_clusters, model=model, itemnum=itemnum, policy_net=policy_net)
 
     # ------------------------------------------------------------------ evaluate
     print("Starting evaluation ...", flush=True)
-    ndcg_results, hr_results = run_evaluation(
+    ndcg_results, hr_results, ndcg_long_results, hr_long_results = run_evaluation(
         model, dataset, args.seq_len_values, args.num_repeats, methods, args.split, args
     )
 
@@ -197,8 +234,10 @@ def main():
     out_path = os.path.join("results", f"{args.dataset}_{timestamp}.json")
 
     output = {
-        "ndcg": {str(k): dict(v) for k, v in ndcg_results.items()},
-        "hr":   {str(k): dict(v) for k, v in hr_results.items()},
+        "ndcg":      {str(k): dict(v) for k, v in ndcg_results.items()},
+        "hr":        {str(k): dict(v) for k, v in hr_results.items()},
+        "ndcg_long": {str(k): dict(v) for k, v in ndcg_long_results.items()},
+        "hr_long":   {str(k): dict(v) for k, v in hr_long_results.items()},
     }
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)
