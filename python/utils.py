@@ -224,7 +224,7 @@ def evaluate_valid(model, dataset, args):
     return NDCG / valid_user, HT / valid_user
 
 
-def evaluate_valid_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None):
+def evaluate_valid_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None, long_users_only=False):
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
     NDCG = 0.0
@@ -238,6 +238,8 @@ def evaluate_valid_with_filter(model, dataset, args, history_len, filter_functio
         if len(train[u]) < 1 or len(valid[u]) < 1: continue
 
         is_long = len(train[u]) > history_len
+        if long_users_only and not is_long:
+            continue
         history = filter_function(train[u], history_len) if is_long else train[u]
         seq = np.zeros([history_len], dtype=np.int32)
         idx = history_len - 1
@@ -283,7 +285,7 @@ def evaluate_valid_with_filter(model, dataset, args, history_len, filter_functio
     )
 
 
-def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None):
+def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None, long_users_only=False):
     """Mirror of evaluate_valid_with_filter but targets the test split.
 
     History = train[u] + [valid[u][0]]; target = test[u][0].
@@ -303,6 +305,8 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
 
         history_full = train[u] + [valid[u][0]]
         is_long = len(history_full) > history_len
+        if long_users_only and not is_long:
+            continue
         history = filter_function(history_full, history_len) if is_long else history_full
         seq = np.zeros([history_len], dtype=np.int32)
         idx = history_len - 1

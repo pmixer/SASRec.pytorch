@@ -51,34 +51,34 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
     # Baseline: most-recent items
     methods.append(("from_end", None, from_end))
     
-#     methods.append(("uniform_random", None, uniform_random))
+    methods.append(("uniform_random", None, uniform_random))
 
-#     # K-Means: mixed unique + recent (seq-len agnostic)
-#     kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
-#     methods.append((
-#         f"kmeans_{num_clusters}_mixed_unique_and_recent",
-#         None,
-#         kmeans_mixed.mixed_unique_and_recent,
-#     ))
+    # K-Means: mixed unique + recent (seq-len agnostic)
+    kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
+    methods.append((
+        f"kmeans_{num_clusters}_mixed_unique_and_recent",
+        None,
+        kmeans_mixed.mixed_unique_and_recent,
+    ))
 
 
-#     # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
-#     for seq_len in seq_len_values:
-#         for multiplier in [1, 2, 4]:
-#             max_per_cluster = int(multiplier * math.sqrt(seq_len))
-#             kmf = KMeansFilteringV2(
-#                 item_embeddings,
-#                 n_clusters=num_clusters,
-#                 max_per_cluster=max_per_cluster,
-#             )
-#             methods.append((
-#                 f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
-#                 seq_len,
-#                 kmf.bounded_cluster_filtering,
-#             ))
+    # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
+    for seq_len in seq_len_values:
+        for multiplier in [1, 2, 4]:
+            max_per_cluster = int(multiplier * math.sqrt(seq_len))
+            kmf = KMeansFilteringV2(
+                item_embeddings,
+                n_clusters=num_clusters,
+                max_per_cluster=max_per_cluster,
+            )
+            methods.append((
+                f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
+                seq_len,
+                kmf.bounded_cluster_filtering,
+            ))
 
     # MMR filtering (seq-len agnostic)
-    for lambda_recency in [0.7]:
+    for lambda_recency in [0.5, 0.7, 0.9]:
         mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
         methods.append((
             f"mmr_lambda{lambda_recency}",
@@ -88,7 +88,7 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 
     # Difficulty-based filtering (requires model)
     if model is not None and itemnum is not None:
-        for k_percent in [10]:
+        for k_percent in [10, 20]:
             diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
             methods.append((
                 f"difficulty_remove_easiest_{k_percent}pct",
@@ -138,6 +138,7 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                     verbose=True,
                     user_start_idx=args.user_start_idx,
                     user_end_idx=args.user_end_idx,
+                    long_users_only=args.long_users_only,
                 )
                 ndcg_results[seq_len][name].append(ndcg)
                 hr_results[seq_len][name].append(hr)
@@ -176,6 +177,8 @@ def main():
                         help='Start index into the sorted user list (inclusive, default: 0)')
     parser.add_argument('--user_end_idx', type=int, default=None,
                         help='End index into the sorted user list (exclusive, default: all users)')
+    parser.add_argument('--long_users_only', action='store_true', default=False,
+                        help='Only evaluate users whose history is longer than the sequence length')
     args = parser.parse_args()
 
     # ------------------------------------------------------------------ dataset
