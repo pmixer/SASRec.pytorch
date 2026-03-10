@@ -77,29 +77,29 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 #                 kmf.bounded_cluster_filtering,
 #             ))
 
-#     # MMR filtering (seq-len agnostic)
-#     for lambda_recency in [0.7]:
-#         mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
-#         methods.append((
-#             f"mmr_lambda{lambda_recency}",
-#             None,
-#             mmr.mmr_filtering,
-#         ))
+    # MMR filtering (seq-len agnostic)
+    for lambda_recency in [0.7]:
+        mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
+        methods.append((
+            f"mmr_lambda{lambda_recency}",
+            None,
+            mmr.mmr_filtering,
+        ))
 
-#     # Difficulty-based filtering (requires model)
-#     if model is not None and itemnum is not None:
-#         for k_percent in [10, 20, 30]:
-#             diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
-#             methods.append((
-#                 f"difficulty_remove_easiest_{k_percent}pct",
-#                 None,
-#                 diff.filter_easiest_k_percent,
-#             ))
-#             methods.append((
-#                 f"difficulty_remove_hardest_{k_percent}pct",
-#                 None,
-#                 diff.filter_hardest_k_percent,
-#             ))
+    # Difficulty-based filtering (requires model)
+    if model is not None and itemnum is not None:
+        for k_percent in [10]:
+            diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
+            methods.append((
+                f"difficulty_remove_easiest_{k_percent}pct",
+                None,
+                diff.filter_easiest_k_percent,
+            ))
+            methods.append((
+                f"difficulty_remove_hardest_{k_percent}pct",
+                None,
+                diff.filter_hardest_k_percent,
+            ))
 
     # RL policy filter
     if policy_net is not None:
@@ -114,6 +114,9 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
     hr_results        = {k: defaultdict(list) for k in seq_len_values}
     ndcg_long_results = {k: defaultdict(list) for k in seq_len_values}
     hr_long_results   = {k: defaultdict(list) for k in seq_len_values}
+    # Counts are constant across repeats; store a single int per (seq_len, method)
+    n_users_results      = {k: {} for k in seq_len_values}
+    n_users_long_results = {k: {} for k in seq_len_values}
 
     for seq_len in seq_len_values:
         for name, method_seq_len, fn in methods:
@@ -127,7 +130,7 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                     flush=True,
                 )
                 eval_fn = evaluate_valid_with_filter if split == "valid" else evaluate_test_split_with_filter
-                ndcg, hr, ndcg_long, hr_long = eval_fn(
+                ndcg, hr, ndcg_long, hr_long, n, n_long = eval_fn(
                     model, dataset,
                     None,       # args (unused inside the function)
                     seq_len,    # history_len
@@ -140,13 +143,16 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                 hr_results[seq_len][name].append(hr)
                 ndcg_long_results[seq_len][name].append(ndcg_long)
                 hr_long_results[seq_len][name].append(hr_long)
+                n_users_results[seq_len][name] = n
+                n_users_long_results[seq_len][name] = n_long
                 print(
                     f"    NDCG@10={ndcg:.4f}  HR@10={hr:.4f}"
-                    f"  NDCG@10(long)={ndcg_long:.4f}  HR@10(long)={hr_long:.4f}",
+                    f"  NDCG@10(long)={ndcg_long:.4f}  HR@10(long)={hr_long:.4f}"
+                    f"  n={n}  n_long={n_long}",
                     flush=True,
                 )
 
-    return ndcg_results, hr_results, ndcg_long_results, hr_long_results
+    return ndcg_results, hr_results, ndcg_long_results, hr_long_results, n_users_results, n_users_long_results
 
 
 def main():
@@ -224,7 +230,7 @@ def main():
 
     # ------------------------------------------------------------------ evaluate
     print("Starting evaluation ...", flush=True)
-    ndcg_results, hr_results, ndcg_long_results, hr_long_results = run_evaluation(
+    ndcg_results, hr_results, ndcg_long_results, hr_long_results, n_users_results, n_users_long_results = run_evaluation(
         model, dataset, args.seq_len_values, args.num_repeats, methods, args.split, args
     )
 
@@ -234,10 +240,12 @@ def main():
     out_path = os.path.join("results", f"{args.dataset}_{timestamp}.json")
 
     output = {
-        "ndcg":      {str(k): dict(v) for k, v in ndcg_results.items()},
-        "hr":        {str(k): dict(v) for k, v in hr_results.items()},
-        "ndcg_long": {str(k): dict(v) for k, v in ndcg_long_results.items()},
-        "hr_long":   {str(k): dict(v) for k, v in hr_long_results.items()},
+        "ndcg":         {str(k): dict(v) for k, v in ndcg_results.items()},
+        "hr":           {str(k): dict(v) for k, v in hr_results.items()},
+        "ndcg_long":    {str(k): dict(v) for k, v in ndcg_long_results.items()},
+        "hr_long":      {str(k): dict(v) for k, v in hr_long_results.items()},
+        "n_users":      {str(k): dict(v) for k, v in n_users_results.items()},
+        "n_users_long": {str(k): dict(v) for k, v in n_users_long_results.items()},
     }
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)

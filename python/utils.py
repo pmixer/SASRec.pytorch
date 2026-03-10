@@ -278,6 +278,8 @@ def evaluate_valid_with_filter(model, dataset, args, history_len, filter_functio
         HT / valid_user,
         NDCG_long / valid_user_long if valid_user_long > 0 else 0.0,
         HT_long / valid_user_long if valid_user_long > 0 else 0.0,
+        int(valid_user),
+        int(valid_user_long),
     )
 
 
@@ -343,6 +345,8 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
         HT / valid_user,
         NDCG_long / valid_user_long if valid_user_long > 0 else 0.0,
         HT_long / valid_user_long if valid_user_long > 0 else 0.0,
+        int(valid_user),
+        int(valid_user_long),
     )
 
 
