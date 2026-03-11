@@ -20,24 +20,24 @@ python3 train_rl_filter.py \
 --entropy_coef 0.0 \
 --seed 42 \
 --reward reciprocal_rank \
---user_start_idx 0 --num_blocks 2 --user_end_idx 30000 --attention full
+--user_start_idx 0 --num_blocks 2 --attention full
 
 python3 train_rl_filter.py \
 --dataset Electronics \
 --sasrec_path Electronics_default/SASRec.epoch=20.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
 --save_dir rl_policy_Electronics \
 --max_length 50 \
---num_epochs 3 \
+--num_epochs 10 \
 --num_samples 32 \
 --dropout_rate 0.2 \
 --baseline rloo \
 --grad_clip 1.0 \
 --gradient_accumulation_steps 16 \
---device cpu \
+--device cuda \
 --entropy_coef 0.0 \
 --seed 42 \
 --reward reciprocal_rank \
---user_start_idx 0 --num_blocks 2 --user_end_idx 30000 --attention full
+--user_start_idx 0 --num_blocks 2 --user_end_idx 400000 --attention full
 """
 
 import os
@@ -52,7 +52,7 @@ import wandb
 
 from model import SASRec, PolicyNetwork
 from filters import uniform_random, from_end, PolicyFilter
-from utils import data_partition
+from utils import data_partition, evaluate_valid_with_filter, evaluate_test_split_with_filter
 
 
 
@@ -288,108 +288,6 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
 
 
 # ---------------------------------------------------------------------------
-# Greedy evaluation
-# ---------------------------------------------------------------------------
-
-def evaluate_greedy(policy_net, sasrec_model, dataset, args):
-    """Evaluate the policy using deterministic top-k selection (one rollout per user).
-
-    Switches the policy to eval mode, selects items greedily via PolicyFilter,
-    and computes mean NDCG@10 over all eligible users (or a 10 000-user sample).
-
-    Args:
-        policy_net:   PolicyNetwork (will be set to eval mode internally).
-        sasrec_model: Frozen SASRec reward model.
-        dataset:      Output of data_partition().
-        args:         Parsed arguments (uses max_length, policy_maxlen).
-
-    Returns:
-        Mean greedy NDCG@10 (float).
-    """
-    [user_train, user_valid, user_test, usernum, itemnum] = dataset
-
-    policy_net.eval()
-    pf = PolicyFilter(policy_net)
-
-    users = list(range(1, usernum + 1))
-
-    total_ndcg = 0.0
-    num_valid = 0
-
-    for u in users[args.user_start_idx:args.user_end_idx]:
-        seq = user_train[u]
-        if len(seq) <= args.max_length or not user_valid[u]:
-            continue
-
-        valid_item = user_valid[u][0]
-        rated = set(user_train[u])
-
-        filtered_seq = pf.filter(seq, args.max_length, user_id=u)
-        ndcg = compute_reward(
-            sasrec_model, u, filtered_seq, valid_item, rated, itemnum, args.max_length,
-            reward_type='ndcg10',  # always evaluate with NDCG@10 regardless of training reward
-        )
-#         print(f"  greedy  u={u:5d}  ndcg={ndcg:.4f}")
-        total_ndcg += ndcg
-        num_valid += 1
-
-    return total_ndcg / max(num_valid, 1)
-
-
-# ---------------------------------------------------------------------------
-# Test evaluation
-# ---------------------------------------------------------------------------
-
-def evaluate_test_with_filter(filter_fn, sasrec_model, dataset, args):
-    """Evaluate a filter on the test split using deterministic top-k selection.
-
-    History = train[u] + [valid[u][0]]; target = test[u][0].
-
-    Args:
-        filter_fn:    Callable(sequence, max_length, user_id) -> filtered list.
-        sasrec_model: Frozen SASRec reward model.
-        dataset:      Output of data_partition().
-        args:         Parsed arguments.
-
-    Returns:
-        Tuple (ndcg, ndcg_all_users) where ndcg is the mean NDCG@10 for users
-        whose history is longer than args.max_length, and ndcg_all_users is the
-        mean NDCG@10 across all valid users.
-    """
-    [user_train, user_valid, user_test, usernum, itemnum] = dataset
-
-    users = list(range(1, usernum + 1))
-
-    total_ndcg = 0.0
-    num_valid = 0
-    total_ndcg_all = 0.0
-    num_valid_all = 0
-
-    for u in users[args.user_start_idx:args.user_end_idx]:
-        if not user_train[u] or not user_valid[u] or not user_test[u]:
-            continue
-
-        history = user_train[u] + [user_valid[u][0]]
-        test_item = user_test[u][0]
-        rated = set(user_train[u]) | {user_valid[u][0]}
-
-        filtered_seq = filter_fn(history, args.max_length, u)
-        reward = compute_reward(
-            sasrec_model, u, filtered_seq, test_item, rated, itemnum, args.max_length,
-            reward_type='ndcg10', truncate_at_10=True,
-        )
-
-        total_ndcg_all += reward
-        num_valid_all += 1
-
-        if len(history) > args.max_length:
-            total_ndcg += reward
-            num_valid += 1
-
-    return total_ndcg / max(num_valid, 1), total_ndcg_all / max(num_valid_all, 1)
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -613,33 +511,56 @@ def main():
         print(f"           | saved {ckpt_path}")
 
         if epoch % 5 == 0:
-            eval_ndcg = evaluate_greedy(policy_net, sasrec_model, dataset, args)
-            print(f"Epoch {epoch:3d} | greedy eval NDCG@10 = {eval_ndcg:.4f}")
-            run.log({"eval/greedy_ndcg": eval_ndcg, "epoch": epoch})
-            if eval_ndcg == 1.0:
+            policy_net.eval()
+            pf = PolicyFilter(policy_net)
+            _, _, eval_ndcg_long, _, _, _ = evaluate_valid_with_filter(
+                sasrec_model, dataset, None, args.max_length,
+                filter_function=lambda seq, ml: pf.filter(seq, ml),
+                user_start_idx=args.user_start_idx,
+                user_end_idx=args.user_end_idx,
+                long_users_only=True,
+            )
+            print(f"Epoch {epoch:3d} | greedy eval NDCG@10 (long users) = {eval_ndcg_long:.4f}")
+            run.log({"eval/greedy_ndcg": eval_ndcg_long, "epoch": epoch})
+            if eval_ndcg_long == 1.0:
                 break
             policy_net.train()
 
         if epoch % 1 == 0:
             policy_net.eval()
             pf = PolicyFilter(policy_net)
-            test_ndcg, test_ndcg_all = evaluate_test_with_filter(lambda seq, ml, u: pf.filter(seq, ml, user_id=u),
-                                      sasrec_model, dataset, args)
-            print(f"Epoch {epoch:3d} | test NDCG@10 = {test_ndcg:.4f}  (all users: {test_ndcg_all:.4f})")
-            run.log({"test/ndcg": test_ndcg, "test/ndcg_all_users": test_ndcg_all, "epoch": epoch})
+            _, _, test_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
+                sasrec_model, dataset, None, args.max_length,
+                filter_function=lambda seq, ml: pf.filter(seq, ml),
+                user_start_idx=args.user_start_idx,
+                user_end_idx=args.user_end_idx,
+                long_users_only=True,
+            )
+            print(f"Epoch {epoch:3d} | test NDCG@10 (long users) = {test_ndcg_long:.4f}  n={n_long}")
+            run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
             policy_net.train()
 
     policy_net.eval()
     pf = PolicyFilter(policy_net)
-    test_ndcg, test_ndcg_all = evaluate_test_with_filter(lambda seq, ml, u: pf.filter(seq, ml, user_id=u),
-                               sasrec_model, dataset, args)
-    print(f"Test NDCG@10 (policy) = {test_ndcg:.4f}  (all users: {test_ndcg_all:.4f})")
-    run.log({"test/ndcg": test_ndcg, "test/ndcg_all_users": test_ndcg_all, "epoch": epoch})
+    _, _, test_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
+        sasrec_model, dataset, None, args.max_length,
+        filter_function=lambda seq, ml: pf.filter(seq, ml),
+        user_start_idx=args.user_start_idx,
+        user_end_idx=args.user_end_idx,
+        long_users_only=True,
+    )
+    print(f"Test NDCG@10 (policy, long users) = {test_ndcg_long:.4f}  n={n_long}")
+    run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
 
-    from_end_ndcg, from_end_ndcg_all = evaluate_test_with_filter(lambda seq, ml, u: from_end(seq, ml),
-                                   sasrec_model, dataset, args)
-    print(f"Test NDCG@10 (from_end) = {from_end_ndcg:.4f}  (all users: {from_end_ndcg_all:.4f})")
-    run.log({"test/ndcg_from_end": from_end_ndcg, "test/ndcg_from_end_all_users": from_end_ndcg_all, "epoch": epoch})
+    _, _, from_end_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
+        sasrec_model, dataset, None, args.max_length,
+        filter_function=lambda seq, ml: from_end(seq, ml),
+        user_start_idx=args.user_start_idx,
+        user_end_idx=args.user_end_idx,
+        long_users_only=True,
+    )
+    print(f"Test NDCG@10 (from_end, long users) = {from_end_ndcg_long:.4f}  n={n_long}")
+    run.log({"test/ndcg_from_end": from_end_ndcg_long, "epoch": epoch})
 
     run.finish()
 
