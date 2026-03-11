@@ -206,7 +206,7 @@ def main():
     model.eval()
 
     # ------------------------------------------------------------------ filters
-    item_embeddings = model.item_emb.weight.data.numpy()
+    item_embeddings = model.item_emb.weight.data.cpu().numpy()
 
     policy_net = None
     if args.policy_path is not None:
