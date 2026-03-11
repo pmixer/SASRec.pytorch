@@ -42,8 +42,6 @@ python3 train_rl_filter.py \
 
 import os
 import sys
-import copy
-import random
 import argparse
 
 import numpy as np
@@ -62,7 +60,7 @@ from utils import data_partition, evaluate_valid_with_filter, evaluate_test_spli
 # ---------------------------------------------------------------------------
 
 def compute_reward(sasrec_model, u, filtered_seq, valid_item, rated, itemnum, max_length,
-                   reward_type='ndcg10', truncate_at_10=False):
+                   reward_type='ndcg10'):
     """Compute a reward for a single user given a filtered history sequence.
 
     Args:
@@ -107,15 +105,7 @@ def compute_reward(sasrec_model, u, filtered_seq, valid_item, rated, itemnum, ma
     if reward_type == 'reciprocal_rank':
         return 1.0 / (rank + 1)
     else:  # 'ndcg10'
-        if truncate_at_10 and rank >= 10:
-            return 0.0
         return 1 / np.log2(rank + 2)
-
-
-# Keep old name as alias for backwards compatibility
-def compute_ndcg(sasrec_model, u, filtered_seq, valid_item, rated, itemnum, max_length):
-    return compute_reward(sasrec_model, u, filtered_seq, valid_item, rated, itemnum,
-                          max_length, reward_type='ndcg10')
 
 
 # ---------------------------------------------------------------------------
@@ -156,20 +146,22 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
         rated = set(user_train[u])
 
         # ------------------------------------------------------------------
-        # Baseline reward (no gradient)
+        # Baseline reward (no gradient) — skip expensive SASRec call for rloo
         # ------------------------------------------------------------------
-        baseline_seq = baseline_fn(seq, args.max_length)
-        baseline_reward = compute_reward(
-            sasrec_model, u, baseline_seq, valid_item, rated, itemnum, args.max_length,
-            reward_type=args.reward,
-        )
+        if args.baseline != 'rloo':
+            baseline_seq = baseline_fn(seq, args.max_length)
+            baseline_reward = compute_reward(
+                sasrec_model, u, baseline_seq, valid_item, rated, itemnum, args.max_length,
+                reward_type=args.reward,
+            )
+        else:
+            baseline_reward = 0.0
 
         # ------------------------------------------------------------------
         # Policy forward pass (gradient flows through log_probs_all)
         # ------------------------------------------------------------------
         log_probs_all = policy_net.get_log_probs(seq, user_id=u)   # [min(L, policy_maxlen)]
         probs = log_probs_all.detach().exp()             # detached for multinomial
-#         import pdb; pdb.set_trace()
 
         num_to_sample = min(args.max_length, probs.shape[0])
         if num_to_sample < args.max_length:
@@ -448,11 +440,6 @@ def main():
             except Exception:
                 pass  # skip 1-D tensors (biases, layernorm weights)
 
-    # Zero-init out_proj so that at initialisation logits are driven entirely
-    # by position_bias (cumsum), making the untrained policy equivalent to from_end.
-#     torch.nn.init.zeros_(policy_net.out_proj.weight)
-#     torch.nn.init.zeros_(policy_net.out_proj.bias)
-
     # ------------------------------------------------------------------
     # 6. Adam optimizer over trainable parameters only
     # ------------------------------------------------------------------
@@ -465,12 +452,12 @@ def main():
     # ------------------------------------------------------------------
     # 7. Resolve baseline filter
     # For 'rloo' the per-sample baseline is computed inside train_epoch;
-    # baseline_fn is still called for the diagnostic print (baseline_display).
+    # baseline_fn is unused but kept for the non-rloo code path.
     # ------------------------------------------------------------------
     if args.baseline == 'from_end':
         baseline_fn = from_end
     elif args.baseline == 'rloo':
-        baseline_fn = from_end   # used only for diagnostic comparison print
+        baseline_fn = from_end
     else:
         baseline_fn = uniform_random
 
@@ -526,31 +513,18 @@ def main():
                 break
             policy_net.train()
 
-        if epoch % 1 == 0:
-            policy_net.eval()
-            pf = PolicyFilter(policy_net)
-            _, _, test_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
-                sasrec_model, dataset, None, args.max_length,
-                filter_function=lambda seq, ml: pf.filter(seq, ml),
-                user_start_idx=args.user_start_idx,
-                user_end_idx=args.user_end_idx,
-                long_users_only=True,
-            )
-            print(f"Epoch {epoch:3d} | test NDCG@10 (long users) = {test_ndcg_long:.4f}  n={n_long}")
-            run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
-            policy_net.train()
-
-    policy_net.eval()
-    pf = PolicyFilter(policy_net)
-    _, _, test_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
-        sasrec_model, dataset, None, args.max_length,
-        filter_function=lambda seq, ml: pf.filter(seq, ml),
-        user_start_idx=args.user_start_idx,
-        user_end_idx=args.user_end_idx,
-        long_users_only=True,
-    )
-    print(f"Test NDCG@10 (policy, long users) = {test_ndcg_long:.4f}  n={n_long}")
-    run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
+        policy_net.eval()
+        pf = PolicyFilter(policy_net)
+        _, _, test_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
+            sasrec_model, dataset, None, args.max_length,
+            filter_function=lambda seq, ml: pf.filter(seq, ml),
+            user_start_idx=args.user_start_idx,
+            user_end_idx=args.user_end_idx,
+            long_users_only=True,
+        )
+        print(f"Epoch {epoch:3d} | test NDCG@10 (long users) = {test_ndcg_long:.4f}  n={n_long}")
+        run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
+        policy_net.train()
 
     _, _, from_end_ndcg_long, _, _, n_long = evaluate_test_split_with_filter(
         sasrec_model, dataset, None, args.max_length,
