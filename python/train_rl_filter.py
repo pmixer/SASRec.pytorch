@@ -10,7 +10,7 @@ python3 train_rl_filter.py \
 --sasrec_path ml-1m_default/SASRec.epoch=200.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
 --save_dir rl_policy_ml1m \
 --max_length 50 \
---num_epochs 1 \
+--num_epochs 3 \
 --num_samples 32 \
 --dropout_rate 0.2 \
 --baseline rloo \
@@ -20,7 +20,24 @@ python3 train_rl_filter.py \
 --entropy_coef 0.0 \
 --seed 42 \
 --reward reciprocal_rank \
---user_start_idx 0 --num_blocks 1 --attention right
+--user_start_idx 0 --num_blocks 2 --user_end_idx 30000 --attention full
+
+python3 train_rl_filter.py \
+--dataset Electronics \
+--sasrec_path Electronics_default/SASRec.epoch=20.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
+--save_dir rl_policy_Electronics \
+--max_length 50 \
+--num_epochs 3 \
+--num_samples 32 \
+--dropout_rate 0.2 \
+--baseline rloo \
+--grad_clip 1.0 \
+--gradient_accumulation_steps 16 \
+--device cpu \
+--entropy_coef 0.0 \
+--seed 42 \
+--reward reciprocal_rank \
+--user_start_idx 0 --num_blocks 2 --user_end_idx 30000 --attention full
 """
 
 import os
