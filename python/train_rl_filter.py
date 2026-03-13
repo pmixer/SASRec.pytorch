@@ -33,8 +33,7 @@ python3 train_rl_filter.py \
 --baseline rloo \
 --grad_clip 1.0 \
 --gradient_accumulation_steps 16 \
---device cuda \
---entropy_coef 0.0 \
+--device cpu \
 --seed 42 \
 --reward reciprocal_rank \
 --user_start_idx 0 --num_blocks 2 --user_end_idx 400000 --attention full
@@ -67,7 +66,7 @@ import torch
 import wandb
 
 from model import SASRec, PolicyNetwork
-from filters import uniform_random, from_end, PolicyFilter
+from filters import uniform_random, from_end
 from utils import data_partition, evaluate_split_with_filter
 
 
@@ -177,18 +176,12 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
             baseline_reward = 0.0
 
         # ------------------------------------------------------------------
-        # Policy forward pass (gradient flows through log_probs_all)
+        # Policy rollout (gradient flows through sample_log_probs_tensor)
         # ------------------------------------------------------------------
-        log_probs_all = policy_net.get_log_probs(input_seq, user_id=u)   # [min(L, policy_maxlen)]
-        probs = log_probs_all.detach().exp()             # detached for multinomial
-
-        num_to_sample = min(args.max_length, probs.shape[0])
-        if num_to_sample < args.max_length:
-            # Sequence visible to policy is shorter than max_length; skip.
+        result = policy_net.rollout(input_seq, args.max_length, args.num_samples)
+        if result is None:
             continue
-
-        # Offset to map policy-window indices back to original sequence positions
-        offset = max(0, len(input_seq) - args.policy_maxlen)
+        batch_seqs, sample_log_probs_tensor = result
 
         # ------------------------------------------------------------------
         # Sample negatives once per user (reused across all rollouts)
@@ -199,24 +192,6 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
             t = np.random.randint(1, itemnum + 1)
             if t not in rated_set:
                 item_idx.append(t)
-
-        # ------------------------------------------------------------------
-        # Collect num_samples rollouts — fully batched
-        # ------------------------------------------------------------------
-        # [num_samples, max_length] — all rollout item selections at once
-        all_selected = torch.multinomial(
-            probs.unsqueeze(0).expand(args.num_samples, -1),
-            args.max_length, replacement=False,
-        )
-        all_selected, _ = all_selected.sort(dim=1)   # chronological order
-
-        # [num_samples] — sum of selected log-probs for each rollout (differentiable)
-        sample_log_probs_tensor = log_probs_all[all_selected].sum(dim=1)
-
-        # Build batched SASRec input sequences
-        seq_window_arr = np.array(input_seq[offset:], dtype=np.int32)   # [L_window]
-        selected_np = all_selected.cpu().numpy()                   # [num_samples, max_length]
-        batch_seqs = seq_window_arr[selected_np]                   # [num_samples, max_length]
 
         # Single batched SASRec forward pass
         with torch.no_grad():
@@ -253,10 +228,6 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
             advantages = rewards_tensor - baseline_reward
             baseline_display = baseline_reward
 
-        # Entropy of the policy distribution over all L items.
-        # H(π) = -Σ p_i log p_i  (uses non-detached log_probs_all → differentiable)
-        entropy = -(log_probs_all.exp() * log_probs_all).sum()
-
         if u <= 10:
             print(
                 f"  u={u:5d}  baseline={baseline_display:.4f}"
@@ -264,11 +235,10 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
                 f"  reward_std={rewards_arr.std():.4f}"
                 f"  reward_min={rewards_arr.min():.4f}"
                 f"  reward_max={rewards_arr.max():.4f}"
-                f"  entropy={entropy.item():.3f}"
             )
         if advantages.std() > 1e-8:
             advantages = advantages / (advantages.std() + 1e-8)
-        loss = -(advantages * sample_log_probs_tensor).mean() - args.entropy_coef * entropy
+        loss = -(advantages * sample_log_probs_tensor).mean()
         (loss / args.gradient_accumulation_steps).backward()
 
         accumulated += 1
@@ -517,11 +487,10 @@ def main():
         print(f"           | saved {ckpt_path}")
 
         policy_net.eval()
-        pf = PolicyFilter(policy_net)
         _, _, eval_ndcg_long, _, _, _ = evaluate_split_with_filter(
             sasrec_model, dataset, None, args.max_length,
             split="valid",
-            filter_function=lambda seq, ml: pf.filter(seq, ml),
+            filter_function=policy_net.filter,
             user_start_idx=args.user_start_idx,
             user_end_idx=args.user_end_idx,
             long_users_only=True,
@@ -535,11 +504,10 @@ def main():
     # Eval on test
     # Policy
     policy_net.eval()
-    pf = PolicyFilter(policy_net)
     _, _, test_ndcg_long, _, _, n_long = evaluate_split_with_filter(
         sasrec_model, dataset, None, args.max_length,
         split="test",
-        filter_function=lambda seq, ml: pf.filter(seq, ml),
+        filter_function=policy_net.filter,
         user_start_idx=args.user_start_idx,
         user_end_idx=args.user_end_idx,
         long_users_only=True,

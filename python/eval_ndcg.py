@@ -27,7 +27,7 @@ import numpy as np
 import torch
 
 from model import SASRec, PolicyNetwork
-from filters import from_end, uniform_random, PolicyFilter
+from filters import from_end, uniform_random
 from utils import data_partition
 
 
@@ -80,8 +80,8 @@ def eval_users(model, user_train, user_valid, user_test, usernum, itemnum,
     Args:
         filter_fn: callable(sequence, max_length) -> filtered sequence.
                    For the policy filter with user conditioning, wrap it so
-                   it already has user_id bound (or just ignore — PolicyFilter
-                   without user_id uses 0 by default).
+                   it already has user_id bound (or just ignore —
+                   PolicyNetwork.filter without user_id uses 0 by default).
     """
     rng = np.random.default_rng(seed)
 
@@ -215,10 +215,7 @@ def main():
         ).to(args.device)
         policy_net.load_state_dict(ckpt['policy_net_state_dict'])
         policy_net.eval()
-        pf = PolicyFilter(policy_net)
-        # Bind user_id per call; we pass a closure that ignores user_id
-        # (overridden per-user below via eval_users_policy).
-        filter_fn = pf.filter
+        filter_fn = policy_net.filter
 
     print(f"Filter: {args.filter_name}")
     print()

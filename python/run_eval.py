@@ -34,7 +34,6 @@ from filters import (
     FastMMRFiltering,
     FilterByDifficulty,
     uniform_random,
-    PolicyFilter,
 )
 
 
@@ -103,8 +102,7 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
 
     # RL policy filter
     if policy_net is not None:
-        pf = PolicyFilter(policy_net)
-        methods.append(("rl_policy", None, lambda seq, ml: pf.filter(seq, ml)))
+        methods.append(("rl_policy", None, policy_net.filter))
 
     return methods
 

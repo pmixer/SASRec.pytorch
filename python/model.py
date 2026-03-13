@@ -235,6 +235,54 @@ class PolicyNetwork(torch.nn.Module):
         log_feats = self.last_layernorm(seqs)
         return log_feats
 
+    def filter(self, sequence, max_length):
+        """Deterministic top-k inference filter.
+
+        Selects the max_length items with the highest policy importance weights,
+        restoring chronological order.  If len(sequence) <= max_length, returns
+        sequence unchanged.
+        """
+        if len(sequence) <= max_length:
+            return sequence
+        with torch.no_grad():
+            log_probs = self.get_log_probs(sequence)           # [min(L, maxlen)]
+        k = min(max_length, log_probs.shape[0])
+        top_indices = log_probs.topk(k).indices.sort().values
+        offset = max(0, len(sequence) - self.maxlen)
+        return [sequence[offset + i.item()] for i in top_indices]
+
+    def rollout(self, sequence, max_length, num_samples):
+        """Batched stochastic rollout for REINFORCE training.
+
+        Returns (batch_seqs, sample_log_probs) or None if the policy's visible
+        window (capped at self.maxlen) is shorter than max_length, making
+        without-replacement sampling impossible.
+
+        Returns:
+            tuple: (batch_seqs, sample_log_probs) where
+                batch_seqs:       np.ndarray [num_samples, max_length] — SASRec input
+                sample_log_probs: Tensor [num_samples] — differentiable
+            None: when visible window < max_length.
+        """
+        log_probs_all = self.get_log_probs(sequence)           # [min(L, maxlen)]
+        if log_probs_all.shape[0] < max_length:
+            return None
+
+        probs = log_probs_all.detach().exp()
+        all_selected = torch.multinomial(
+            probs.unsqueeze(0).expand(num_samples, -1),
+            max_length, replacement=False,
+        )
+        all_selected, _ = all_selected.sort(dim=1)             # chronological
+
+        sample_log_probs = log_probs_all[all_selected].sum(dim=1)  # [num_samples]
+
+        offset = max(0, len(sequence) - self.maxlen)
+        seq_window_arr = np.array(sequence[offset:], dtype=np.int32)
+        batch_seqs = seq_window_arr[all_selected.cpu().numpy()]    # [num_samples, max_length]
+
+        return batch_seqs, sample_log_probs
+
     def get_log_probs(self, sequence, user_id=0):
         """Return log-softmax importance weights for each item in `sequence`.
 
