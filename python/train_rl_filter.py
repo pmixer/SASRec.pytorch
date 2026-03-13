@@ -494,7 +494,7 @@ def main():
 
         # Checkpoint
         ckpt_name = (
-            f"policy.epoch={epoch}.maxlen={args.max_length}.ndcg={mean_ndcg:.4f}.pth"
+            f"policy.epoch={epoch}.maxlen={args.max_length}.user_end={args.user_end_idx}.ndcg={mean_ndcg:.4f}.pth"
         )
         ckpt_path = os.path.join(args.save_dir, ckpt_name)
         torch.save(
