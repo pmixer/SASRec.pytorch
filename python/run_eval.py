@@ -27,7 +27,7 @@ import numpy as np
 import torch
 
 from model import SASRec, PolicyNetwork
-from utils import data_partition, evaluate_valid_with_filter, evaluate_test_split_with_filter
+from utils import data_partition, evaluate_split_with_filter
 from filters import (
     from_end,
     KMeansFilteringV2,
@@ -51,55 +51,55 @@ def build_methods(item_embeddings, seq_len_values, num_clusters=200, model=None,
     # Baseline: most-recent items
     methods.append(("from_end", None, from_end))
     
-    methods.append(("uniform_random", None, uniform_random))
+#     methods.append(("uniform_random", None, uniform_random))
 
-    # K-Means: mixed unique + recent (seq-len agnostic)
-    kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
-    methods.append((
-        f"kmeans_{num_clusters}_mixed_unique_and_recent",
-        None,
-        kmeans_mixed.mixed_unique_and_recent,
-    ))
+#     # K-Means: mixed unique + recent (seq-len agnostic)
+#     kmeans_mixed = KMeansFilteringV2(item_embeddings, n_clusters=num_clusters)
+#     methods.append((
+#         f"kmeans_{num_clusters}_mixed_unique_and_recent",
+#         None,
+#         kmeans_mixed.mixed_unique_and_recent,
+#     ))
 
 
-    # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
-    for seq_len in seq_len_values:
-        for multiplier in [1, 2, 4]:
-            max_per_cluster = int(multiplier * math.sqrt(seq_len))
-            kmf = KMeansFilteringV2(
-                item_embeddings,
-                n_clusters=num_clusters,
-                max_per_cluster=max_per_cluster,
-            )
-            methods.append((
-                f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
-                seq_len,
-                kmf.bounded_cluster_filtering,
-            ))
+#     # K-Means: bounded cluster filtering, max_per_cluster = multiplier * sqrt(seq_len)
+#     for seq_len in seq_len_values:
+#         for multiplier in [1, 2, 4]:
+#             max_per_cluster = int(multiplier * math.sqrt(seq_len))
+#             kmf = KMeansFilteringV2(
+#                 item_embeddings,
+#                 n_clusters=num_clusters,
+#                 max_per_cluster=max_per_cluster,
+#             )
+#             methods.append((
+#                 f"kmeans_{num_clusters}_bounded_{max_per_cluster}_per_cluster",
+#                 seq_len,
+#                 kmf.bounded_cluster_filtering,
+#             ))
 
-    # MMR filtering (seq-len agnostic)
-    for lambda_recency in [0.5, 0.7, 0.9]:
-        mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
-        methods.append((
-            f"mmr_lambda{lambda_recency}",
-            None,
-            mmr.mmr_filtering,
-        ))
+#     # MMR filtering (seq-len agnostic)
+#     for lambda_recency in [0.5, 0.7, 0.9]:
+#         mmr = FastMMRFiltering(item_embeddings, lambda_recency=lambda_recency)
+#         methods.append((
+#             f"mmr_lambda{lambda_recency}",
+#             None,
+#             mmr.mmr_filtering,
+#         ))
 
-    # Difficulty-based filtering (requires model)
-    if model is not None and itemnum is not None:
-        for k_percent in [10, 20]:
-            diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
-            methods.append((
-                f"difficulty_remove_easiest_{k_percent}pct",
-                None,
-                diff.filter_easiest_k_percent,
-            ))
-            methods.append((
-                f"difficulty_remove_hardest_{k_percent}pct",
-                None,
-                diff.filter_hardest_k_percent,
-            ))
+#     # Difficulty-based filtering (requires model)
+#     if model is not None and itemnum is not None:
+#         for k_percent in [10, 20]:
+#             diff = FilterByDifficulty(model, itemnum, k_percent=k_percent)
+#             methods.append((
+#                 f"difficulty_remove_easiest_{k_percent}pct",
+#                 None,
+#                 diff.filter_easiest_k_percent,
+#             ))
+#             methods.append((
+#                 f"difficulty_remove_hardest_{k_percent}pct",
+#                 None,
+#                 diff.filter_hardest_k_percent,
+#             ))
 
     # RL policy filter
     if policy_net is not None:
@@ -129,11 +129,11 @@ def run_evaluation(model, dataset, seq_len_values, num_repeats, methods, split, 
                     f"  seq_len={seq_len}  method={name}  repeat={repeat + 1}/{num_repeats}",
                     flush=True,
                 )
-                eval_fn = evaluate_valid_with_filter if split == "valid" else evaluate_test_split_with_filter
-                ndcg, hr, ndcg_long, hr_long, n, n_long = eval_fn(
+                ndcg, hr, ndcg_long, hr_long, n, n_long = evaluate_split_with_filter(
                     model, dataset,
                     None,       # args (unused inside the function)
                     seq_len,    # history_len
+                    split=split,
                     filter_function=fn,
                     verbose=True,
                     user_start_idx=args.user_start_idx,

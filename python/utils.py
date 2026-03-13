@@ -224,71 +224,11 @@ def evaluate_valid(model, dataset, args):
     return NDCG / valid_user, HT / valid_user
 
 
-def evaluate_valid_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None, long_users_only=False):
-    [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
+def evaluate_split_with_filter(model, dataset, args, history_len, split="valid", filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None, long_users_only=False):
+    """Evaluate NDCG@10 and HR@10 on the valid or test split with optional history filtering.
 
-    NDCG = 0.0
-    valid_user = 0.0
-    HT = 0.0
-    NDCG_long = 0.0
-    valid_user_long = 0.0
-    HT_long = 0.0
-    users = list(range(1, usernum + 1))[user_start_idx:user_end_idx]
-    for u in users:
-        if len(train[u]) < 1 or len(valid[u]) < 1: continue
-
-        is_long = len(train[u]) > history_len
-        if long_users_only and not is_long:
-            continue
-        history = filter_function(train[u], history_len) if is_long else train[u]
-        seq = np.zeros([history_len], dtype=np.int32)
-        idx = history_len - 1
-        for i in reversed(history):
-            seq[idx] = i
-            idx -= 1
-            if idx == -1: break
-
-        rated = set(train[u])
-        rated.add(0)
-        item_idx = [valid[u][0]]
-        for _ in range(100):
-            t = np.random.randint(1, itemnum + 1)
-            while t in rated: t = np.random.randint(1, itemnum + 1)
-            item_idx.append(t)
-
-        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
-        predictions = predictions[0]
-
-        rank = predictions.argsort().argsort()[0].item()
-
-        valid_user += 1
-        if is_long:
-            valid_user_long += 1
-
-        if rank < 10:
-            NDCG += 1 / np.log2(rank + 2)
-            HT += 1
-            if is_long:
-                NDCG_long += 1 / np.log2(rank + 2)
-                HT_long += 1
-        if valid_user % 100 == 0 and verbose:
-            print('.', end="")
-            sys.stdout.flush()
-
-    return (
-        NDCG / valid_user,
-        HT / valid_user,
-        NDCG_long / valid_user_long if valid_user_long > 0 else 0.0,
-        HT_long / valid_user_long if valid_user_long > 0 else 0.0,
-        int(valid_user),
-        int(valid_user_long),
-    )
-
-
-def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_function=lambda x, _: x, verbose=True, user_start_idx=0, user_end_idx=None, long_users_only=False):
-    """Mirror of evaluate_valid_with_filter but targets the test split.
-
-    History = train[u] + [valid[u][0]]; target = test[u][0].
+    split="valid": history = train[u],                target = valid[u][0]
+    split="test":  history = train[u] + [valid[u][0]] (if valid exists), target = test[u][0]
     """
     [train, valid, test, usernum, itemnum] = copy.deepcopy(dataset)
 
@@ -300,10 +240,19 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
     HT_long = 0.0
     users = list(range(1, usernum + 1))[user_start_idx:user_end_idx]
     for u in users:
-        if len(train[u]) < 1 or len(valid[u]) < 1 or len(test[u]) < 1:
-            continue
+        if split == "valid":
+            if len(train[u]) < 1 or len(valid[u]) < 1:
+                continue
+            history_full = train[u]
+            target = valid[u][0]
+            rated = set(train[u])
+        else:
+            if len(train[u]) < 1 or len(test[u]) < 1:
+                continue
+            history_full = train[u] + ([valid[u][0]] if len(valid[u]) > 0 else [])
+            target = test[u][0]
+            rated = set(train[u]) | (set(valid[u]) if len(valid[u]) > 0 else set())
 
-        history_full = train[u] + [valid[u][0]]
         is_long = len(history_full) > history_len
         if long_users_only and not is_long:
             continue
@@ -316,9 +265,8 @@ def evaluate_test_split_with_filter(model, dataset, args, history_len, filter_fu
             if idx == -1:
                 break
 
-        rated = set(train[u]) | {valid[u][0]}
         rated.add(0)
-        item_idx = [test[u][0]]
+        item_idx = [target]
         for _ in range(100):
             t = np.random.randint(1, itemnum + 1)
             while t in rated:
