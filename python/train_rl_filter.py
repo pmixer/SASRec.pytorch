@@ -40,6 +40,23 @@ python3 train_rl_filter.py \
 
 
 python3 train_rl_filter.py \
+--dataset Electronics \
+--sasrec_path Electronics_default/SASRec.epoch=20.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
+--save_dir rl_policy_Electronics \
+--max_length 50 \
+--num_epochs 10 \
+--num_samples 32 \
+--dropout_rate 0.2 \
+--baseline rloo \
+--grad_clip 1.0 \
+--gradient_accumulation_steps 16 \
+--device cpu \
+--seed 42 \
+--reward reciprocal_rank \
+--user_start_idx 0 --num_blocks 1 --user_end_idx 400000 --attention full --policy_type encoder_decoder
+
+
+python3 train_rl_filter.py \
 --dataset Beauty \
 --sasrec_path Beauty_default/SASRec.epoch=1000.lr=0.001.layer=2.head=1.hidden=50.maxlen=200.pth \
 --save_dir rl_policy_Beauty \
@@ -65,7 +82,7 @@ import numpy as np
 import torch
 import wandb
 
-from model import SASRec, PolicyNetwork
+from model import SASRec, PolicyNetwork, EncoderDecoderPolicyNetwork
 from filters import uniform_random, from_end
 from utils import data_partition, evaluate_split_with_filter
 
@@ -323,8 +340,6 @@ def main():
                              'from_end, or uniform_random')
     parser.add_argument('--grad_clip', type=float, default=1.0,
                         help='Gradient clipping max norm (0 = disabled, default 1.0)')
-    parser.add_argument('--entropy_coef', type=float, default=0.01,
-                        help='Entropy bonus coefficient to prevent policy collapse (default 0.01)')
     parser.add_argument('--reward', type=str, default='ndcg10',
                         choices=['ndcg10', 'reciprocal_rank'],
                         help='Training reward: ndcg10 (sparse, binary above rank 10) or '
@@ -339,9 +354,10 @@ def main():
     parser.add_argument('--sasrec_norm_first', action='store_true', default=False,
                         help='Whether the SASRec checkpoint used pre-norm variant')
     parser.add_argument('--seed', type=int, default=None)
-    
-    
-
+    parser.add_argument('--policy_type', type=str, default='standard',
+                        choices=['standard', 'encoder_decoder'],
+                        help='Policy architecture: standard (parallel scoring) or '
+                             'encoder_decoder (auto-regressive selection)')
 
     args = parser.parse_args()
     if args.seed:
@@ -404,12 +420,16 @@ def main():
         num_blocks=args.num_blocks,
         num_heads=args.num_heads,
         maxlen=args.policy_maxlen,
+        max_length=args.max_length,
         dropout_rate=args.dropout_rate,
         device=args.device,
         norm_first=args.norm_first,
         attention=args.attention,
     )
-    policy_net = PolicyNetwork(usernum if args.user_emb else 0, itemnum, policy_args).to(args.device)
+    if args.policy_type == 'encoder_decoder':
+        policy_net = EncoderDecoderPolicyNetwork(itemnum, policy_args).to(args.device)
+    else:
+        policy_net = PolicyNetwork(usernum if args.user_emb else 0, itemnum, policy_args).to(args.device)
 
     # ------------------------------------------------------------------
     # 4. Copy and freeze SASRec item embeddings
@@ -512,7 +532,7 @@ def main():
         user_end_idx=args.user_end_idx,
         long_users_only=True,
     )
-    print(f"Test NDCG@10 (from_end, long users) = {test_ndcg_long:.4f}  n={n_long}")
+    print(f"Test NDCG@10 (policy, long users) = {test_ndcg_long:.4f}  n={n_long}")
     run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
     # From end
     _, _, from_end_ndcg_long, _, _, n_long = evaluate_split_with_filter(

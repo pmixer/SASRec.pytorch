@@ -308,3 +308,236 @@ class PolicyNetwork(torch.nn.Module):
 #         logits += torch.cumsum(self.position_bias[-logits.shape[0]:], dim=0)
         logits += self.position_bias[-logits.shape[0]:]
         return torch.nn.functional.log_softmax(logits, dim=0)          # [L]
+
+
+class EncoderDecoderPolicyNetwork(torch.nn.Module):
+    """Encoder-decoder policy network for auto-regressive sequence selection.
+
+    The encoder applies bidirectional self-attention over the input history window.
+    The decoder auto-regressively selects items one at a time using causal
+    self-attention + cross-attention to the encoder output, without replacement.
+
+    Item embeddings are copied from a pre-trained SASRec model and frozen;
+    all other parameters are trained end-to-end via REINFORCE (RLOO).
+    """
+
+    def __init__(self, item_num, args):
+        super(EncoderDecoderPolicyNetwork, self).__init__()
+
+        self.item_num = item_num
+        self.dev = args.device
+        self.norm_first = args.norm_first
+        self.maxlen = args.maxlen
+        self.max_length = args.max_length
+
+        hidden = args.hidden_units
+
+        # Shared
+        self.item_emb = torch.nn.Embedding(item_num + 1, hidden, padding_idx=0)
+        self.position_bias = torch.nn.Parameter(
+            torch.arange(self.maxlen, dtype=torch.float) * 0.01, requires_grad=True
+        )
+        self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
+
+        # SOS token for decoder start
+        self.sos_embedding = torch.nn.Parameter(torch.randn(hidden))
+
+        # Encoder positional embedding
+        self.enc_pos_emb = torch.nn.Embedding(self.maxlen + 1, hidden, padding_idx=0)
+
+        # Encoder layers (bidirectional)
+        self.enc_attention_layernorms = torch.nn.ModuleList()
+        self.enc_attention_layers = torch.nn.ModuleList()
+        self.enc_forward_layernorms = torch.nn.ModuleList()
+        self.enc_forward_layers = torch.nn.ModuleList()
+        self.enc_last_layernorm = torch.nn.LayerNorm(hidden, eps=1e-8)
+
+        for _ in range(args.num_blocks):
+            self.enc_attention_layernorms.append(torch.nn.LayerNorm(hidden, eps=1e-8))
+            self.enc_attention_layers.append(
+                torch.nn.MultiheadAttention(hidden, args.num_heads, args.dropout_rate)
+            )
+            self.enc_forward_layernorms.append(torch.nn.LayerNorm(hidden, eps=1e-8))
+            self.enc_forward_layers.append(PointWiseFeedForward(hidden, args.dropout_rate))
+
+        # Decoder positional embedding (positions 1..max_length)
+        self.dec_pos_emb = torch.nn.Embedding(self.max_length + 1, hidden, padding_idx=0)
+
+        # Decoder layers (causal self-attn + cross-attn + FFN)
+        self.dec_self_attention_layernorms = torch.nn.ModuleList()
+        self.dec_self_attention_layers = torch.nn.ModuleList()
+        self.dec_cross_attention_layernorms = torch.nn.ModuleList()
+        self.dec_cross_attention_layers = torch.nn.ModuleList()
+        self.dec_forward_layernorms = torch.nn.ModuleList()
+        self.dec_forward_layers = torch.nn.ModuleList()
+        self.dec_last_layernorm = torch.nn.LayerNorm(hidden, eps=1e-8)
+
+        for _ in range(args.num_blocks):
+            self.dec_self_attention_layernorms.append(torch.nn.LayerNorm(hidden, eps=1e-8))
+            self.dec_self_attention_layers.append(
+                torch.nn.MultiheadAttention(hidden, args.num_heads, args.dropout_rate)
+            )
+            self.dec_cross_attention_layernorms.append(torch.nn.LayerNorm(hidden, eps=1e-8))
+            self.dec_cross_attention_layers.append(
+                torch.nn.MultiheadAttention(hidden, args.num_heads, args.dropout_rate)
+            )
+            self.dec_forward_layernorms.append(torch.nn.LayerNorm(hidden, eps=1e-8))
+            self.dec_forward_layers.append(PointWiseFeedForward(hidden, args.dropout_rate))
+
+    def encode(self, sequence):
+        """Bidirectional encoder over the most recent maxlen items.
+
+        Returns:
+            enc_out:    Tensor [1, L, H]
+            seq_window: np.ndarray of item ids in the window
+            offset:     int, items trimmed from the front of sequence
+        """
+        seq_window = np.array(sequence[-self.maxlen:], dtype=np.int32)
+        offset = max(0, len(sequence) - self.maxlen)
+        L = len(seq_window)
+
+        seq_t = torch.tensor(seq_window, dtype=torch.long, device=self.dev).unsqueeze(0)  # [1, L]
+        seqs = self.item_emb(seq_t) * (self.item_emb.embedding_dim ** 0.5)               # [1, L, H]
+        poss = torch.arange(1, L + 1, dtype=torch.long, device=self.dev).unsqueeze(0)    # [1, L]
+        seqs = seqs + self.enc_pos_emb(poss)
+        seqs = self.emb_dropout(seqs)
+
+        for i in range(len(self.enc_attention_layers)):
+            seqs_t = seqs.transpose(0, 1)  # [L, 1, H]
+            if self.norm_first:
+                x = self.enc_attention_layernorms[i](seqs_t)
+                mha_out, _ = self.enc_attention_layers[i](x, x, x)
+                seqs_t = seqs_t + mha_out
+                seqs = seqs_t.transpose(0, 1)
+                seqs = seqs + self.enc_forward_layers[i](self.enc_forward_layernorms[i](seqs))
+            else:
+                mha_out, _ = self.enc_attention_layers[i](seqs_t, seqs_t, seqs_t)
+                seqs_t = self.enc_attention_layernorms[i](seqs_t + mha_out)
+                seqs = seqs_t.transpose(0, 1)
+                seqs = self.enc_forward_layernorms[i](seqs + self.enc_forward_layers[i](seqs))
+
+        enc_out = self.enc_last_layernorm(seqs)  # [1, L, H]
+        return enc_out, seq_window, offset
+
+    def _decode(self, dec_input_buf, enc_out):
+        """Causal self-attention + cross-attention decoder.
+
+        Args:
+            dec_input_buf: [B, T+1, H] (SOS + previously selected embeddings)
+            enc_out:       [B, L, H]
+
+        Returns:
+            Tensor [B, T+1, H]
+        """
+        _, T1, _ = dec_input_buf.shape
+
+        poss = torch.arange(1, T1 + 1, dtype=torch.long, device=self.dev)  # [T+1]
+        seqs = dec_input_buf + self.dec_pos_emb(poss).unsqueeze(0)          # [B, T+1, H]
+
+        causal_mask = ~torch.tril(torch.ones((T1, T1), dtype=torch.bool, device=self.dev))
+        enc_kv = enc_out.transpose(0, 1)  # [L, B, H]
+
+        for i in range(len(self.dec_self_attention_layers)):
+            seqs_t = seqs.transpose(0, 1)  # [T+1, B, H]
+            if self.norm_first:
+                x = self.dec_self_attention_layernorms[i](seqs_t)
+                sa_out, _ = self.dec_self_attention_layers[i](x, x, x, attn_mask=causal_mask)
+                seqs_t = seqs_t + sa_out
+                x = self.dec_cross_attention_layernorms[i](seqs_t)
+                ca_out, _ = self.dec_cross_attention_layers[i](x, enc_kv, enc_kv)
+                seqs_t = seqs_t + ca_out
+                seqs = seqs_t.transpose(0, 1)
+                seqs = seqs + self.dec_forward_layers[i](self.dec_forward_layernorms[i](seqs))
+            else:
+                sa_out, _ = self.dec_self_attention_layers[i](seqs_t, seqs_t, seqs_t, attn_mask=causal_mask)
+                seqs_t = self.dec_self_attention_layernorms[i](seqs_t + sa_out)
+                ca_out, _ = self.dec_cross_attention_layers[i](seqs_t, enc_kv, enc_kv)
+                seqs_t = self.dec_cross_attention_layernorms[i](seqs_t + ca_out)
+                seqs = seqs_t.transpose(0, 1)
+                seqs = self.dec_forward_layernorms[i](seqs + self.dec_forward_layers[i](seqs))
+
+        return self.dec_last_layernorm(seqs)  # [B, T+1, H]
+
+    def rollout(self, sequence, max_length, num_samples):
+        """Batched auto-regressive stochastic rollout for REINFORCE training.
+
+        Returns (batch_seqs, total_log_probs) or None if visible window < max_length.
+
+        Returns:
+            tuple: (batch_seqs, total_log_probs) where
+                batch_seqs:       np.ndarray [num_samples, max_length]
+                total_log_probs:  Tensor [num_samples] — differentiable
+            None: when visible window < max_length.
+        """
+        enc_out, seq_window, offset = self.encode(sequence)
+        L = len(seq_window)
+        if L < max_length:
+            return None
+
+        hidden_units = self.item_emb.embedding_dim
+        N = num_samples
+
+        seq_t = torch.tensor(seq_window, dtype=torch.long, device=self.dev)
+        seq_item_embs = self.item_emb(seq_t) * (hidden_units ** 0.5)        # [L, H]
+        enc_out_exp = enc_out.expand(N, -1, -1)                              # [N, L, H]
+
+        available = torch.ones(N, L, dtype=torch.bool, device=self.dev)
+        # SOS: [N, 1, H]
+        dec_input_buf = self.sos_embedding.view(1, 1, hidden_units).expand(N, 1, hidden_units).clone()
+        total_log_probs = torch.zeros(N, device=self.dev)
+        selected_positions = []
+
+        for _ in range(max_length):
+            dec_out = self._decode(dec_input_buf, enc_out_exp)       # [N, T+1, H]
+            hidden = dec_out[:, -1, :]                                # [N, H]
+            logits = hidden @ seq_item_embs.T + self.position_bias[-L:]   # [N, L]
+            logits = logits.masked_fill(~available, float('-inf'))
+            log_probs_t = torch.nn.functional.log_softmax(logits, dim=-1)  # [N, L] — in graph
+
+            chosen = torch.multinomial(log_probs_t.exp(), 1).squeeze(-1)   # [N]
+            total_log_probs = total_log_probs + log_probs_t[torch.arange(N, device=self.dev), chosen]
+
+            available[torch.arange(N, device=self.dev), chosen.detach()] = False
+            selected_positions.append(chosen.detach())
+            next_emb = seq_item_embs[chosen.detach()]                      # [N, H]
+            dec_input_buf = torch.cat([dec_input_buf, next_emb.unsqueeze(1)], dim=1)
+
+        sel, _ = torch.stack(selected_positions, dim=1).sort(dim=1)        # [N, max_length]
+        batch_seqs = seq_window[sel.cpu().numpy()]                          # [N, max_length]
+        return batch_seqs, total_log_probs
+
+    def filter(self, sequence, max_length):
+        """Greedy (argmax) inference filter; returns chronologically ordered subsequence."""
+        if len(sequence) <= max_length:
+            return sequence
+
+        with torch.no_grad():
+            enc_out, seq_window, offset = self.encode(sequence)
+            L = len(seq_window)
+            if L < max_length:
+                return list(sequence)
+
+            hidden_units = self.item_emb.embedding_dim
+            seq_t = torch.tensor(seq_window, dtype=torch.long, device=self.dev)
+            seq_item_embs = self.item_emb(seq_t) * (hidden_units ** 0.5)   # [L, H]
+
+            available = torch.ones(1, L, dtype=torch.bool, device=self.dev)
+            dec_input_buf = self.sos_embedding.view(1, 1, hidden_units)     # [1, 1, H]
+            selected_positions = []
+
+            for _ in range(max_length):
+                dec_out = self._decode(dec_input_buf, enc_out)              # [1, T+1, H]
+                hidden = dec_out[:, -1, :]                                  # [1, H]
+                logits = hidden @ seq_item_embs.T + self.position_bias[-L:] # [1, L]
+                logits = logits.masked_fill(~available, float('-inf'))
+                chosen = logits.argmax(dim=-1)[0].item()
+
+                available[0, chosen] = False
+                selected_positions.append(chosen)
+                next_emb = seq_item_embs[chosen]                            # [H]
+                dec_input_buf = torch.cat(
+                    [dec_input_buf, next_emb.view(1, 1, hidden_units)], dim=1
+                )
+
+            selected_positions.sort()
+            return [sequence[offset + p] for p in selected_positions]
