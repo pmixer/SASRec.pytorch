@@ -165,6 +165,7 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
     users = list(range(1, usernum + 1))
 
     total_ndcg = 0.0
+    total_entropy = 0.0
     num_valid = 0
     optimizer.zero_grad()
     accumulated = 0
@@ -198,7 +199,7 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
         result = policy_net.rollout(input_seq, args.max_length, args.num_samples)
         if result is None:
             continue
-        batch_seqs, sample_log_probs_tensor = result
+        batch_seqs, sample_log_probs_tensor, entropy = result
 
         # ------------------------------------------------------------------
         # Sample negatives once per user (reused across all rollouts)
@@ -255,7 +256,9 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
             )
         if advantages.std() > 1e-8:
             advantages = advantages / (advantages.std() + 1e-8)
-        loss = -(advantages * sample_log_probs_tensor).mean()
+        policy_loss = -(advantages * sample_log_probs_tensor).mean()
+        loss = policy_loss - args.entropy_coef * entropy
+        total_entropy += entropy.detach().item()
         (loss / args.gradient_accumulation_steps).backward()
 
         accumulated += 1
@@ -282,7 +285,7 @@ def train_epoch(policy_net, sasrec_model, dataset, args, optimizer, baseline_fn)
         optimizer.zero_grad()
         print(f"  grad_norm={grad_norm:.6f}")
 
-    return total_ndcg / max(num_valid, 1)
+    return total_ndcg / max(num_valid, 1), total_entropy / max(num_valid, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +306,7 @@ def main():
                         help='Directory for policy checkpoints')
 
     # Filter / sequence lengths
-    parser.add_argument('--max_length', type=int, required=True,
+    parser.add_argument('--max_length', type=int, default=50,
                         help='Filter output length (must be <= sasrec_maxlen)')
     parser.add_argument('--policy_maxlen', type=int, default=500,
                         help='Max input length for PolicyNetwork (default 500)')
@@ -322,15 +325,15 @@ def main():
 
     # Training
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--num_epochs', type=int, default=20)
-    parser.add_argument('--num_samples', type=int, default=5,
+    parser.add_argument('--num_epochs', type=int, default=3)
+    parser.add_argument('--num_samples', type=int, default=32,
                         help='Rollouts per user before gradient accumulation step')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=32,
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=16,
                         help='Users to accumulate before optimizer step')
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--user_start_idx', type=int, default=0,
                         help='Start index into the sorted user list (inclusive, default: 0)')
-    parser.add_argument('--user_end_idx', type=int, default=None,
+    parser.add_argument('--user_end_idx', type=int, default=400000,
                         help='End index into the sorted user list (exclusive, default: all users)')
 
     # Baseline filter
@@ -340,7 +343,7 @@ def main():
                              'from_end, or uniform_random')
     parser.add_argument('--grad_clip', type=float, default=1.0,
                         help='Gradient clipping max norm (0 = disabled, default 1.0)')
-    parser.add_argument('--reward', type=str, default='ndcg10',
+    parser.add_argument('--reward', type=str, default='reciprocal_rank',
                         choices=['ndcg10', 'reciprocal_rank'],
                         help='Training reward: ndcg10 (sparse, binary above rank 10) or '
                              'reciprocal_rank (dense, always > 0). '
@@ -353,11 +356,15 @@ def main():
     parser.add_argument('--sasrec_maxlen', type=int, default=200)
     parser.add_argument('--sasrec_norm_first', action='store_true', default=False,
                         help='Whether the SASRec checkpoint used pre-norm variant')
-    parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--policy_type', type=str, default='standard',
                         choices=['standard', 'encoder_decoder'],
                         help='Policy architecture: standard (parallel scoring) or '
                              'encoder_decoder (auto-regressive selection)')
+    parser.add_argument('--entropy_coef', type=float, default=0.0,
+                        help='Entropy regularization coefficient. Higher = more exploration. (default: 0.01)')
+    parser.add_argument('--position_bias_init_scale', type=float, default=0.0,
+                        help='Initial scale for position bias (default: 0.0 = no recency prior at init)')
 
     args = parser.parse_args()
     if args.seed:
@@ -366,16 +373,17 @@ def main():
     os.makedirs(args.save_dir, exist_ok=True)
     print(args)
 
-    run = wandb.init(
-        entity="lars-h-hertel-personal",
-        project="ml-1m-sequence-selection",
-        config=vars(args),
-    )
-    wandb.define_metric("epoch")
-    wandb.define_metric("train/mean_reward", step_metric="epoch")
-    wandb.define_metric("eval/greedy_ndcg", step_metric="epoch")
-    wandb.define_metric("test/ndcg", step_metric="epoch")
-    wandb.define_metric("test/ndcg_from_end", step_metric="epoch")
+#     run = wandb.init(
+#         entity="lars-h-hertel-personal",
+#         project="ml-1m-sequence-selection",
+#         config=vars(args),
+#     )
+#     wandb.define_metric("epoch")
+#     wandb.define_metric("train/mean_reward", step_metric="epoch")
+#     wandb.define_metric("train/entropy", step_metric="epoch")
+#     wandb.define_metric("eval/greedy_ndcg", step_metric="epoch")
+#     wandb.define_metric("test/ndcg", step_metric="epoch")
+#     wandb.define_metric("test/ndcg_from_end", step_metric="epoch")
 
     if args.max_length > args.sasrec_maxlen:
         print(
@@ -425,6 +433,7 @@ def main():
         device=args.device,
         norm_first=args.norm_first,
         attention=args.attention,
+        position_bias_init_scale=args.position_bias_init_scale,
     )
     if args.policy_type == 'encoder_decoder':
         policy_net = EncoderDecoderPolicyNetwork(itemnum, policy_args).to(args.device)
@@ -476,11 +485,11 @@ def main():
     epoch = 0
     for epoch in range(1, args.num_epochs + 1):
         policy_net.train()
-        mean_ndcg = train_epoch(
+        mean_ndcg, mean_entropy = train_epoch(
             policy_net, sasrec_model, dataset, args, optimizer, baseline_fn
         )
-        print(f"Epoch {epoch:3d} | mean reward = {mean_ndcg:.4f}")
-        run.log({"train/mean_reward": mean_ndcg, "epoch": epoch})
+        print(f"Epoch {epoch:3d} | mean reward = {mean_ndcg:.4f} | mean entropy = {mean_entropy:.4f}")
+#         run.log({"train/mean_reward": mean_ndcg, "train/entropy": mean_entropy, "epoch": epoch})
 
         # Checkpoint
         ckpt_name = (
@@ -516,7 +525,7 @@ def main():
             long_users_only=True,
         )
         print(f"Epoch {epoch:3d} | greedy eval NDCG@10 (long users) = {eval_ndcg_long:.4f}")
-        run.log({"eval/greedy_ndcg": eval_ndcg_long, "epoch": epoch})
+#         run.log({"eval/greedy_ndcg": eval_ndcg_long, "epoch": epoch})
         if eval_ndcg_long == 1.0:
             break
         policy_net.train()
@@ -533,7 +542,7 @@ def main():
         long_users_only=True,
     )
     print(f"Test NDCG@10 (policy, long users) = {test_ndcg_long:.4f}  n={n_long}")
-    run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
+#     run.log({"test/ndcg": test_ndcg_long, "epoch": epoch})
     # From end
     _, _, from_end_ndcg_long, _, _, n_long = evaluate_split_with_filter(
         sasrec_model, dataset, None, args.max_length,
@@ -544,9 +553,9 @@ def main():
         long_users_only=True,
     )
     print(f"Test NDCG@10 (from_end, long users) = {from_end_ndcg_long:.4f}  n={n_long}")
-    run.log({"test/ndcg_from_end": from_end_ndcg_long, "epoch": epoch})
+#     run.log({"test/ndcg_from_end": from_end_ndcg_long, "epoch": epoch})
 
-    run.finish()
+#     run.finish()
 
 
 if __name__ == '__main__':

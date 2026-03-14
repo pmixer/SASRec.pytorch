@@ -157,7 +157,10 @@ class PolicyNetwork(torch.nn.Module):
         self.attention = getattr(args, 'attention', 'full')
         self.maxlen = args.maxlen  # = policy_maxlen
 #         self.position_bias = torch.nn.Parameter(torch.ones(self.maxlen,) * 0.01, requires_grad=True)
-        self.position_bias = torch.nn.Parameter(torch.arange(self.maxlen,) * 0.01, requires_grad=True)
+        scale = getattr(args, 'position_bias_init_scale', 0.0)
+        self.position_bias = torch.nn.Parameter(
+            torch.arange(self.maxlen, dtype=torch.float) * scale, requires_grad=True
+        )
 
         self.item_emb = torch.nn.Embedding(item_num + 1, args.hidden_units, padding_idx=0)
         self.pos_emb = torch.nn.Embedding(args.maxlen + 1, args.hidden_units, padding_idx=0)
@@ -268,6 +271,8 @@ class PolicyNetwork(torch.nn.Module):
         if log_probs_all.shape[0] < max_length:
             return None
 
+        entropy = -(log_probs_all.exp() * log_probs_all).sum()  # scalar, differentiable
+
         probs = log_probs_all.detach().exp()
         all_selected = torch.multinomial(
             probs.unsqueeze(0).expand(num_samples, -1),
@@ -281,7 +286,7 @@ class PolicyNetwork(torch.nn.Module):
         seq_window_arr = np.array(sequence[offset:], dtype=np.int32)
         batch_seqs = seq_window_arr[all_selected.cpu().numpy()]    # [num_samples, max_length]
 
-        return batch_seqs, sample_log_probs
+        return batch_seqs, sample_log_probs, entropy
 
     def get_log_probs(self, sequence, user_id=0):
         """Return log-softmax importance weights for each item in `sequence`.
@@ -334,8 +339,9 @@ class EncoderDecoderPolicyNetwork(torch.nn.Module):
 
         # Shared
         self.item_emb = torch.nn.Embedding(item_num + 1, hidden, padding_idx=0)
+        scale = getattr(args, 'position_bias_init_scale', 0.0)
         self.position_bias = torch.nn.Parameter(
-            torch.arange(self.maxlen, dtype=torch.float) * 0.01, requires_grad=True
+            torch.arange(self.maxlen, dtype=torch.float) * scale, requires_grad=True
         )
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
@@ -485,6 +491,7 @@ class EncoderDecoderPolicyNetwork(torch.nn.Module):
         # SOS: [N, 1, H]
         dec_input_buf = self.sos_embedding.view(1, 1, hidden_units).expand(N, 1, hidden_units).clone()
         total_log_probs = torch.zeros(N, device=self.dev)
+        total_entropy = torch.zeros(N, device=self.dev)
         selected_positions = []
 
         for _ in range(max_length):
@@ -493,6 +500,9 @@ class EncoderDecoderPolicyNetwork(torch.nn.Module):
             logits = hidden @ seq_item_embs.T + self.position_bias[-L:]   # [N, L]
             logits = logits.masked_fill(~available, float('-inf'))
             log_probs_t = torch.nn.functional.log_softmax(logits, dim=-1)  # [N, L] — in graph
+
+            step_entropy = -(log_probs_t.exp() * log_probs_t).sum(dim=-1)  # [N]
+            total_entropy = total_entropy + step_entropy
 
             chosen = torch.multinomial(log_probs_t.exp(), 1).squeeze(-1)   # [N]
             total_log_probs = total_log_probs + log_probs_t[torch.arange(N, device=self.dev), chosen]
@@ -504,7 +514,7 @@ class EncoderDecoderPolicyNetwork(torch.nn.Module):
 
         sel, _ = torch.stack(selected_positions, dim=1).sort(dim=1)        # [N, max_length]
         batch_seqs = seq_window[sel.cpu().numpy()]                          # [N, max_length]
-        return batch_seqs, total_log_probs
+        return batch_seqs, total_log_probs, total_entropy.mean()
 
     def filter(self, sequence, max_length):
         """Greedy (argmax) inference filter; returns chronologically ordered subsequence."""
