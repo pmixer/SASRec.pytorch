@@ -45,7 +45,6 @@ I see a dozen of citations of the repo🫰, pls use the example bib as below if 
   author  = {Zan Huang},
   title   = {SASRec.pytorch},
   year    = {2020},
-  url     = {https://github.com/pmixer/SASRec.pytorch},
-  urldate = {2026-01-29}
+  url     = {https://github.com/pmixer/SASRec.pytorch}
 }
 ```
