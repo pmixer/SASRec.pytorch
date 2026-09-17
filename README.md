@@ -1,3 +1,7 @@
+update on 09/17/2026: I refined last year's short paper, so the ideas could be readable - https://arxiv.org/abs/2504.09596 👀.
+
+---
+
 update on 05/23/2025: thx to [Wentworth1028](https://github.com/Wentworth1028) and [Tiny-Snow](https://github.com/Tiny-Snow), we have LayerNorm update, for higher NDCG&HR, and here's the [doc](https://github.com/Tiny-Snow/SASRec.pytorch/blob/main/Result_Norm.md)👍.
 
 ---
