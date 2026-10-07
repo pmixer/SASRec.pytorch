@@ -2,9 +2,10 @@ import os
 import time
 import torch
 import argparse
+import numpy as np
 
 from model import SASRec
-from utils import *
+from utils import build_index, data_partition, WarpSampler, evaluate, evaluate_valid
 
 def str2bool(s):
     if s not in {'false', 'true'}:
@@ -19,7 +20,7 @@ parser.add_argument('--lr', default=0.001, type=float)
 parser.add_argument('--maxlen', default=200, type=int)
 parser.add_argument('--hidden_units', default=50, type=int)
 parser.add_argument('--num_blocks', default=2, type=int)
-parser.add_argument('--num_epochs', default=1000, type=int)
+parser.add_argument('--num_epochs', default=200, type=int)
 parser.add_argument('--num_heads', default=1, type=int)
 parser.add_argument('--dropout_rate', default=0.2, type=float)
 parser.add_argument('--l2_emb', default=0.0, type=float)

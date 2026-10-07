@@ -1,3 +1,12 @@
 .DS_Store
 __pycache__/
 *_default/
+python/data/Beauty_s*_*.txt
+python/data/Beauty_p*.txt
+python/data/Beauty_p*.txt.meta.json
+python/Beauty_clean_*/
+python/Beauty_p*_b*_s*/
+experiment_logs/
+experiment_results/
+*.pth
+*_run/

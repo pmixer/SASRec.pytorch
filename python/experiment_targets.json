@@ -1,0 +1,14 @@
+{
+  "tail": {
+    "target": 31421,
+    "control": 50678
+  },
+  "mid": {
+    "target": 22851,
+    "control": 42688
+  },
+  "head": {
+    "target": 24495,
+    "control": 41888
+  }
+}
